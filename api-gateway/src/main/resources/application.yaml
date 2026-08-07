@@ -1,10 +1,50 @@
 spring:
   application:
     name: api-gateway
+
+#app:
+#  security:
+#    public-routes:
+#      - "/api/v1/auth/login"
+#      - "/api/v1/auth/register"
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: account-service
+              uri: lb://account-service
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/users/**
+            - id: upload-new-version
+              uri: lb://upload-service
+              predicates:
+                - Path=/api/v1/files/*/uploads
+            - id: download-file-content
+              uri: lb://download-service
+              predicates:
+                - Path=/api/v1/files/*/content,/api/v1/files/*/versions/*/content
+            - id: metadata-service
+              uri: lb://metadata-service
+              predicates:
+                - Path=/api/v1/files/**,/api/v1/folders/**,/api/v1/shares/**
+            - id: public-share-content
+              uri: lb://download-service
+              predicates:
+                - Path=/api/v1/public/shares/*/content
+            - id: public-share-metadata
+              uri: lb://metadata-service
+              predicates:
+                - Path=/api/v1/public/shares/**
+            - id: upload-service
+              uri: lb://upload-service
+              predicates:
+                - Path=/api/v1/uploads/**
 
 server:
   port: 8080
