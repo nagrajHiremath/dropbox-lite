@@ -460,7 +460,7 @@ Tests required:
 - duplicate idempotency key
 - MinIO failure
 
-Run affected tests and stop after UPL-02.
+after impl stop after UPL-02.
 ```
 
 ---

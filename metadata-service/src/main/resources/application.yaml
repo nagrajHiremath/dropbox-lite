@@ -6,12 +6,12 @@ spring:
     username: ${DB_USER:dropbox}
     password: ${DB_PASSWORD:dropbox}
   flyway:
-    enabled: true
-    locations: classpath:db/migration
+    enabled: false
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: create
     open-in-view: false
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -22,10 +22,17 @@ spring:
 server:
   port: 8082
 
+
 eureka:
   client:
-    service-url:
+    serviceUrl:
       defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    hostname: localhost
 
 springdoc:
   api-docs:

@@ -1,0 +1,141 @@
+package com.dropbox.metadata_service.service;
+
+import com.dropbox.metadata_service.domain.FileEntity;
+import com.dropbox.metadata_service.domain.FileStatus;
+import com.dropbox.metadata_service.domain.ShareLink;
+import com.dropbox.metadata_service.domain.ShareStatus;
+import com.dropbox.metadata_service.dto.CreateShareRequest;
+import com.dropbox.metadata_service.exception.ConflictException;
+import com.dropbox.metadata_service.exception.InvalidRequestException;
+import com.dropbox.metadata_service.exception.ResourceNotFoundException;
+import com.dropbox.metadata_service.repository.FileRepository;
+import com.dropbox.metadata_service.repository.FileVersionRepository;
+import com.dropbox.metadata_service.repository.ShareLinkRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class ShareService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int TOKEN_BYTES = 32;
+    private static final int MAX_TOKEN_ATTEMPTS = 3;
+
+    private final ShareLinkRepository shareLinkRepository;
+    private final FileRepository fileRepository;
+    private final FileVersionRepository fileVersionRepository;
+
+    @Transactional
+    public RawShare createShare(UUID ownerId, UUID fileId, CreateShareRequest request) {
+        FileEntity file = fileRepository.findByIdAndOwnerId(fileId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+        if (file.getStatus() != FileStatus.ACTIVE) {
+            throw new InvalidRequestException("File is not active");
+        }
+
+        for (int attempt = 1; attempt <= MAX_TOKEN_ATTEMPTS; attempt++) {
+            String rawToken = generateToken();
+            ShareLink share = ShareLink.builder()
+                    .fileId(fileId)
+                    .tokenHash(hashToken(rawToken))
+                    .permission(request.permission())
+                    .status(ShareStatus.ACTIVE)
+                    .expiresAt(request.expiresAt())
+                    .createdBy(ownerId)
+                    .build();
+            try {
+                share = shareLinkRepository.save(share);
+                return new RawShare(share, rawToken);
+            } catch (DataIntegrityViolationException e) {
+                if (attempt == MAX_TOKEN_ATTEMPTS) {
+                    throw new ConflictException("Failed to generate a unique share token, please retry");
+                }
+            }
+        }
+        throw new ConflictException("Failed to generate a unique share token, please retry");
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShareLink> listShares(UUID ownerId, UUID fileId) {
+        fileRepository.findByIdAndOwnerId(fileId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+        return shareLinkRepository.findByFileIdOrderByCreatedAtDesc(fileId);
+    }
+
+    @Transactional
+    public void revokeShare(UUID ownerId, UUID shareId) {
+        ShareLink share = shareLinkRepository.findById(shareId)
+                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+
+        FileEntity file = fileRepository.findByIdAndOwnerId(share.getFileId(), ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+
+        if (share.getStatus() == ShareStatus.REVOKED) {
+            return;
+        }
+
+        share.setStatus(ShareStatus.REVOKED);
+        shareLinkRepository.save(share);
+    }
+
+    @Transactional(readOnly = true)
+    public PublicShareView resolvePublicShare(String rawToken) {
+        String tokenHash = hashToken(rawToken);
+        ShareLink share = shareLinkRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+
+        if (share.getStatus() != ShareStatus.ACTIVE) {
+            throw new ResourceNotFoundException("Share not found");
+        }
+        if (share.getExpiresAt() != null && share.getExpiresAt().isBefore(Instant.now())) {
+            throw new ResourceNotFoundException("Share not found");
+        }
+
+        FileEntity file = fileRepository.findById(share.getFileId())
+                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+        if (file.getStatus() != FileStatus.ACTIVE) {
+            throw new ResourceNotFoundException("Share not found");
+        }
+
+        Long sizeBytes = file.getCurrentVersionId() == null ? null
+                : fileVersionRepository.findById(file.getCurrentVersionId())
+                        .map(v -> v.getSizeBytes())
+                        .orElse(null);
+
+        return new PublicShareView(file, share.getPermission(), sizeBytes);
+    }
+
+    private static String generateToken() {
+        byte[] bytes = new byte[TOKEN_BYTES];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String hashToken(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    public record RawShare(ShareLink share, String rawToken) {
+    }
+
+    public record PublicShareView(FileEntity file, String permission, Long sizeBytes) {
+    }
+}
