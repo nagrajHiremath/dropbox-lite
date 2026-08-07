@@ -299,7 +299,7 @@ Responsibilities:
 - Abort upload
 - Upload completion
 - New-version upload
-- MinIO multipart integration
+- Application-level multipart/chunked resumable upload using MinIO temporary objects + server-side compose (the official MinIO Java SDK does not expose manual multipart methods publicly)
 - Upload idempotency
 - Upload rate limiting
 - Distributed completion lock
@@ -1574,7 +1574,8 @@ Upload Service
   |
 Create durable upload session
   |
-Initialize MinIO multipart upload
+Initialize chunked upload (verify MinIO storage backend is reachable;
+temporary part objects are created per-part on upload, not here)
 ```
 
 Parts:
@@ -1620,7 +1621,7 @@ COMPLETING
         |
 verify parts
         |
-MinIO CompleteMultipartUpload
+MinIO server-side compose of temporary part objects into the final object
         |
 STORAGE_COMPLETED
         |

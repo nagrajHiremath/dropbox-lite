@@ -6,11 +6,11 @@ spring:
     username: ${DB_USER:dropbox}
     password: ${DB_PASSWORD:dropbox}
   flyway:
-    enabled: true
+    enabled: false
     locations: classpath:db/migration
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: create
     open-in-view: false
   data:
     redis:
