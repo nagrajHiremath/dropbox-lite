@@ -5,12 +5,9 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:account_db}
     username: ${DB_USER:dropbox}
     password: ${DB_PASSWORD:dropbox}
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: create
     open-in-view: false
 
 server:
@@ -18,12 +15,21 @@ server:
 
 eureka:
   client:
-    service-url:
-      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    hostname: localhost
 
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+storage:
+  default-quota-bytes: ${DEFAULT_QUOTA_BYTES:5368709120}
 
 springdoc:
   api-docs:
