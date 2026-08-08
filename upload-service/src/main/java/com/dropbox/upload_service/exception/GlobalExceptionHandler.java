@@ -59,4 +59,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("VERSION_CONFLICT", ex.getMessage(), Instant.now(), null));
     }
+
+    @ExceptionHandler(UploadLockedException.class)
+    public ResponseEntity<ErrorResponse> handleUploadLocked(UploadLockedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("UPLOAD_LOCKED", ex.getMessage(), Instant.now(), null));
+    }
 }

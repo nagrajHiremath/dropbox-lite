@@ -10,6 +10,7 @@ import com.dropbox.upload_service.dto.MaterializeFileResponse;
 import com.dropbox.upload_service.exception.InvalidRequestException;
 import com.dropbox.upload_service.exception.InvalidUploadStateException;
 import com.dropbox.upload_service.exception.ResourceNotFoundException;
+import com.dropbox.upload_service.exception.UploadLockedException;
 import com.dropbox.upload_service.repository.UploadPartRepository;
 import com.dropbox.upload_service.repository.UploadSessionRepository;
 import io.minio.MinioClient;
@@ -21,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,14 +49,19 @@ class UploadCompletionServiceTest {
     private MinioClient minioClient;
     @Mock
     private UploadTempPartsCleaner tempPartsCleaner;
+    @Mock
+    private RedisLockService lockService;
 
     private UploadCompletionService service;
 
     @BeforeEach
     void setUp() {
         service = new UploadCompletionService(
-                uploadSessionRepository, uploadPartRepository, metadataServiceClient, minioClient, tempPartsCleaner);
+                uploadSessionRepository, uploadPartRepository, metadataServiceClient, minioClient, tempPartsCleaner,
+                lockService);
         ReflectionTestUtils.setField(service, "bucket", "dropbox-files");
+        ReflectionTestUtils.setField(service, "lockTtlSeconds", 30L);
+        when(lockService.tryAcquire(any(), any())).thenReturn(Optional.of("test-lock-token"));
     }
 
     private UploadSession session(UUID id, UUID ownerId, UploadStatus status, int totalParts, long chunkSize, long totalSize) {

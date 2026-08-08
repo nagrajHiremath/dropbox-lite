@@ -9,15 +9,18 @@ import com.dropbox.metadata_service.dto.MaterializeFileRequest;
 import com.dropbox.metadata_service.dto.MaterializeFileResponse;
 import com.dropbox.metadata_service.dto.MaterializeVersionRequest;
 import com.dropbox.metadata_service.exception.ConflictException;
+import com.dropbox.metadata_service.exception.DependencyUnavailableException;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,10 +37,16 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileMaterializationService {
 
+    private static final String LOCK_KEY_PREFIX = "lock:file:version:";
+
     private final FileVersionRepository fileVersionRepository;
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
     private final FileVersionMaterializer materializer;
+    private final RedisLockService lockService;
+
+    @Value("${metadata.version-lock.ttl-seconds:30}")
+    private long lockTtlSeconds;
 
     public MaterializeFileResponse materialize(UUID ownerId, MaterializeFileRequest request) {
         Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
@@ -75,8 +84,37 @@ public class FileMaterializationService {
      * won the (file_id, version_number) race - the same protection restoreVersion (VER-03)
      * already relies on. The latter surfaces as 409 for the caller to retry, matching
      * restoreVersion's existing single-attempt-then-409 convention for this table.
+     *
+     * A Redis lock (lock:file:version:{fileId}, see UPL-06's RedisLockService and
+     * TECHNICAL_DESIGN.md 45/46) wraps this whole method as an ADDITIONAL correctness
+     * layer on top of the DB unique constraint above, not a replacement for it - two
+     * concurrent version uploads for the same file now serialize instead of both racing
+     * MinIO/DB work only for one to lose at the last moment. If Redis itself is
+     * unreachable, the request fails cleanly rather than proceeding uncoordinated.
      */
     public MaterializeFileResponse materializeVersion(UUID ownerId, MaterializeVersionRequest request) {
+        String lockKey = LOCK_KEY_PREFIX + request.fileId();
+        String lockToken = acquireLockOrFail(lockKey);
+        try {
+            return doMaterializeVersion(ownerId, request);
+        } finally {
+            lockService.release(lockKey, lockToken);
+        }
+    }
+
+    private String acquireLockOrFail(String lockKey) {
+        Optional<String> token;
+        try {
+            token = lockService.tryAcquire(lockKey, Duration.ofSeconds(lockTtlSeconds));
+        } catch (RuntimeException e) {
+            // Redis unreachable - fail safely rather than blindly finalize uncoordinated.
+            throw new DependencyUnavailableException("Distributed lock backend is unavailable", e);
+        }
+        return token.orElseThrow(() ->
+                new ConflictException("A version is already being created for this file, please retry shortly"));
+    }
+
+    private MaterializeFileResponse doMaterializeVersion(UUID ownerId, MaterializeVersionRequest request) {
         Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
         if (existing.isPresent()) {
             return toResponse(existing.get());

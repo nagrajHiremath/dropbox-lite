@@ -37,9 +37,12 @@ class FileMaterializationServiceTest {
     private FolderRepository folderRepository;
     @Mock
     private FileVersionMaterializer materializer;
+    @Mock
+    private RedisLockService lockService;
 
     private FileMaterializationService service() {
-        return new FileMaterializationService(fileVersionRepository, fileRepository, folderRepository, materializer);
+        return new FileMaterializationService(
+                fileVersionRepository, fileRepository, folderRepository, materializer, lockService);
     }
 
     private MaterializeFileRequest request(UUID sourceUploadId, UUID folderId) {

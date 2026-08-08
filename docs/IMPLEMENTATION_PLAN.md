@@ -647,7 +647,7 @@ Failure Testing
 
 ---
 
-# 20. UPL-06 — Distributed Completion Lock
+# 20. UPL-06 — Distributed Completion Lock ✅
 
 Lock:
 
@@ -840,7 +840,7 @@ POST /folders/{id}/restore
 
 ---
 
-# 29. META-04 — Dropbox Views
+# 29. META-04 — Dropbox Views ✅
 
 Implement:
 
@@ -956,7 +956,7 @@ update current_version_id
     - distributed lock
     - DB unique constraint
 
-**Pending:** the DB unique constraint (`file_versions(file_id, version_number)`) is implemented and enforces correctness on its own. The distributed lock layer is not yet implemented - it depends on UPL-06 (Distributed Completion Lock), which has not been started and requires Redis infrastructure not yet wired into any service.
+Both layers are now in place: the DB unique constraint (`file_versions(file_id, version_number)`), plus a Redis lock (`lock:file:version:{fileId}`, metadata-service's own RedisLockService, same pattern as UPL-06) wrapping `FileMaterializationService.materializeVersion`.
 
 ---
 

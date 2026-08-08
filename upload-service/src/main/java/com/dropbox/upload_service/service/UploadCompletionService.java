@@ -12,6 +12,7 @@ import com.dropbox.upload_service.exception.DependencyUnavailableException;
 import com.dropbox.upload_service.exception.InvalidRequestException;
 import com.dropbox.upload_service.exception.InvalidUploadStateException;
 import com.dropbox.upload_service.exception.ResourceNotFoundException;
+import com.dropbox.upload_service.exception.UploadLockedException;
 import com.dropbox.upload_service.repository.UploadPartRepository;
 import com.dropbox.upload_service.repository.UploadSessionRepository;
 import io.minio.ComposeObjectArgs;
@@ -21,9 +22,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -45,6 +48,15 @@ import java.util.UUID;
  * durably checkpointed on the session's status column one at a time, and a
  * mid-flight failure (MinIO down, metadata-service down) must leave the prior
  * checkpoint intact rather than roll it back.
+ *
+ * UPL-06: a Redis lock (lock:upload:complete:{uploadId}) wraps the whole
+ * method so two Upload Service instances can never simultaneously finalize
+ * the same upload - this is an ADDITIONAL correctness layer on top of the
+ * state machine/idempotency/DB constraints above, not a replacement for them
+ * (see TECHNICAL_DESIGN.md 45/46). If Redis itself is unreachable, the
+ * request fails cleanly (DependencyUnavailableException) rather than
+ * proceeding uncoordinated; if another request already holds the lock, this
+ * one is rejected (UploadLockedException) for the caller to retry shortly.
  */
 @Service
 @RequiredArgsConstructor
@@ -53,16 +65,44 @@ public class UploadCompletionService {
     private static final Set<UploadStatus> RESUMABLE_STATES = Set.of(
             UploadStatus.INITIATED, UploadStatus.UPLOADING, UploadStatus.COMPLETING, UploadStatus.STORAGE_COMPLETED);
 
+    private static final String LOCK_KEY_PREFIX = "lock:upload:complete:";
+
     private final UploadSessionRepository uploadSessionRepository;
     private final UploadPartRepository uploadPartRepository;
     private final MetadataServiceClient metadataServiceClient;
     private final MinioClient minioClient;
     private final UploadTempPartsCleaner tempPartsCleaner;
+    private final RedisLockService lockService;
 
     @Value("${minio.bucket}")
     private String bucket;
 
+    @Value("${upload.completion-lock.ttl-seconds:30}")
+    private long lockTtlSeconds;
+
     public CompleteUploadResponse complete(UUID ownerId, UUID uploadId) {
+        String lockKey = LOCK_KEY_PREFIX + uploadId;
+        String lockToken = acquireLockOrFail(lockKey);
+        try {
+            return doComplete(ownerId, uploadId);
+        } finally {
+            lockService.release(lockKey, lockToken);
+        }
+    }
+
+    private String acquireLockOrFail(String lockKey) {
+        Optional<String> token;
+        try {
+            token = lockService.tryAcquire(lockKey, Duration.ofSeconds(lockTtlSeconds));
+        } catch (RuntimeException e) {
+            // Redis unreachable - fail safely rather than blindly finalize uncoordinated.
+            throw new DependencyUnavailableException("Distributed lock backend is unavailable", e);
+        }
+        return token.orElseThrow(() ->
+                new UploadLockedException("This upload is already being completed by another request, please retry shortly"));
+    }
+
+    private CompleteUploadResponse doComplete(UUID ownerId, UUID uploadId) {
         UploadSession session = uploadSessionRepository.findByIdAndUserId(uploadId, ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Upload not found"));
 

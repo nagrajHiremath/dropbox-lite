@@ -55,7 +55,10 @@ public class FileService {
                 FileSpecifications.hasStatus(trashed ? FileStatus.TRASHED : FileStatus.ACTIVE)
         );
 
-        if (!recent && !trashed) {
+        // Photos/Videos (type filter) are account-wide views, same as Recent/Trash -
+        // see TECHNICAL_DESIGN.md's Views API list, which groups ?type=image/video
+        // with ?view=recent, not with folder browsing.
+        if (!recent && !trashed && type == null) {
             spec = spec.and(FileSpecifications.inFolder(folderId));
         }
 
