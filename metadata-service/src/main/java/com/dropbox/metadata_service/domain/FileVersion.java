@@ -57,6 +57,16 @@ public class FileVersion {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /**
+     * Upload Service's upload_sessions.id, when this version was materialized from a
+     * completed upload. Nullable + unique so a retried completion call can be detected
+     * and replayed instead of creating a duplicate file/version (see UPL-05). Postgres
+     * treats multiple NULLs as distinct, so versions created some other way (e.g. a
+     * future Kafka-driven path, or version-restore) are unaffected.
+     */
+    @Column(name = "source_upload_id", unique = true)
+    private UUID sourceUploadId;
+
     @PrePersist
     void onCreate() {
         if (this.createdAt == null) {

@@ -1,7 +1,11 @@
 package com.dropbox.upload_service.client;
 
+import com.dropbox.upload_service.dto.MaterializeFileRequest;
+import com.dropbox.upload_service.dto.MaterializeFileResponse;
 import com.dropbox.upload_service.exception.DependencyUnavailableException;
+import com.dropbox.upload_service.exception.InvalidRequestException;
 import com.dropbox.upload_service.exception.ResourceNotFoundException;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -20,7 +24,7 @@ public class MetadataServiceClient {
 
     private final RestClient restClient;
 
-    public MetadataServiceClient(RestClient.Builder loadBalancedRestClientBuilder) {
+    public MetadataServiceClient(@LoadBalanced RestClient.Builder loadBalancedRestClientBuilder) {
         this.restClient = loadBalancedRestClientBuilder.baseUrl(METADATA_SERVICE_BASE_URL).build();
     }
 
@@ -40,6 +44,36 @@ public class MetadataServiceClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResourceNotFoundException("Folder not found");
+            }
+            throw new DependencyUnavailableException("Metadata service returned an unexpected error", e);
+        } catch (RestClientException e) {
+            throw new DependencyUnavailableException("Metadata service is unreachable", e);
+        }
+    }
+
+    /**
+     * Materializes the logical file/version for a completed upload. Idempotent on
+     * metadata-service's side, keyed by request.sourceUploadId() - safe to retry.
+     *
+     * @throws ResourceNotFoundException      if the target folder does not exist or is not owned by the caller
+     * @throws InvalidRequestException        if the target folder is not active
+     * @throws DependencyUnavailableException if metadata-service could not be reached
+     */
+    public MaterializeFileResponse materializeFile(UUID ownerId, MaterializeFileRequest request) {
+        try {
+            return restClient.post()
+                    .uri("/api/v1/internal/files")
+                    .header("X-User-Id", ownerId.toString())
+                    .body(request)
+                    .retrieve()
+                    .body(MaterializeFileResponse.class);
+        } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            if (status == 404) {
+                throw new ResourceNotFoundException("Folder not found");
+            }
+            if (status == 400) {
+                throw new InvalidRequestException("Metadata service rejected the file materialization request");
             }
             throw new DependencyUnavailableException("Metadata service returned an unexpected error", e);
         } catch (RestClientException e) {

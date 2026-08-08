@@ -41,4 +41,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(new ErrorResponse("DEPENDENCY_UNAVAILABLE", ex.getMessage(), Instant.now(), null));
     }
+
+    @ExceptionHandler(InvalidUploadStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidUploadState(InvalidUploadStateException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("INVALID_UPLOAD_STATE", ex.getMessage(), Instant.now(), null));
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_REQUEST", ex.getMessage(), Instant.now(), null));
+    }
 }

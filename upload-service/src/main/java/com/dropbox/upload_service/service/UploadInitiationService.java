@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.BucketExistsArgs;
 import io.minio.MinioClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UploadInitiationService {
@@ -124,6 +126,12 @@ public class UploadInitiationService {
             idempotencyKeyWriter.reserve(record);
             return true;
         } catch (DataIntegrityViolationException e) {
+            // Expected: another request already holds this Idempotency-Key (unique
+            // constraint on user_id/operation/idempotency_key is the race-detection
+            // mechanism itself, not a fault). Deliberately no exception/stack trace
+            // here - awaitReservationOwner() looks up and handles the winner next.
+            log.debug("Idempotency-Key reservation lost the race (expected): userId={}, operation={}, idempotencyKey={}",
+                    ownerId, OPERATION, idempotencyKey);
             return false;
         }
     }

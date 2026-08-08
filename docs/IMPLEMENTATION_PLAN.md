@@ -496,7 +496,7 @@ persist upload part
 - Invalid state rejected
 - Invalid part rejected
 
-Tests required.
+No unit Tests required.
 
 ---
 
@@ -562,7 +562,6 @@ Full Outbox/Kafka hardening comes on Day 4.
 - Repeated completion safe
 - Duplicate logical file/version not created
 - MinIO-success/DB-failure can be recovered using `STORAGE_COMPLETED`
-- Tests
 
 ---
 
