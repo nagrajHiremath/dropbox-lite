@@ -99,6 +99,36 @@
         },
         "description": "Composes all parts in MinIO, then materializes the file/version in metadata-service (direct service-to-service call). Safe to call repeatedly - already-COMPLETED replays, STORAGE_COMPLETED resumes without recomposing."
       }
+    },
+    {
+      "name": "Abort Upload",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "X-User-Id", "value": "{{userId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/uploads/{{uploadId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "uploads", "{{uploadId}}"]
+        },
+        "description": "UPL-07. Discards any temp part objects uploaded so far and marks the session ABORTED. Only valid from INITIATED/UPLOADING/FAILED/EXPIRED - returns 409 from COMPLETING/STORAGE_COMPLETED/COMPLETED. Repeated abort on an already-ABORTED session is a no-op (204)."
+      }
+    },
+    {
+      "name": "Expire Sweep (Internal - Worker Trigger)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-User-Id", "value": "00000000-0000-0000-0000-000000000000", "description": "Sentinel value async-worker sends - the sweep is not scoped to a single owner, this only needs to be a well-formed UUID to satisfy CurrentUserHeaderFilter." }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/internal/uploads/expire-sweep",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "internal", "uploads", "expire-sweep"]
+        },
+        "description": "UPL-08. Service-to-service only - no gateway route exists for /api/v1/internal/**, so this request goes directly to upload-service like the rest of this collection. Normally triggered on a schedule by async-worker. Finds sessions with expires_at in the past and status still INITIATED/UPLOADING, atomically claims and marks each EXPIRED, and discards their temp part objects. Returns { \"expiredCount\": N }. To see this do something, Initiate an Upload, don't complete it, temporarily shorten the session expiry (or wait it out), then call this."
+      }
     }
   ]
 }

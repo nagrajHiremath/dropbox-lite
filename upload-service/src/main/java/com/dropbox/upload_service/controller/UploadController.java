@@ -5,6 +5,7 @@ import com.dropbox.upload_service.dto.InitiateUploadRequest;
 import com.dropbox.upload_service.dto.InitiateUploadResponse;
 import com.dropbox.upload_service.dto.UploadPartResponse;
 import com.dropbox.upload_service.dto.UploadStatusResponse;
+import com.dropbox.upload_service.service.UploadAbortService;
 import com.dropbox.upload_service.service.UploadCompletionService;
 import com.dropbox.upload_service.service.UploadInitiationService;
 import com.dropbox.upload_service.service.UploadPartService;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +38,7 @@ public class UploadController {
     private final UploadPartService uploadPartService;
     private final UploadStatusService uploadStatusService;
     private final UploadCompletionService uploadCompletionService;
+    private final UploadAbortService uploadAbortService;
 
     @PostMapping
     public ResponseEntity<InitiateUploadResponse> initiateUpload(
@@ -71,5 +74,13 @@ public class UploadController {
             @PathVariable UUID uploadId) {
         CompleteUploadResponse response = uploadCompletionService.complete(ownerId, uploadId);
         return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{uploadId}")
+    public ResponseEntity<Void> abortUpload(
+            @AuthenticationPrincipal UUID ownerId,
+            @PathVariable UUID uploadId) {
+        uploadAbortService.abort(ownerId, uploadId);
+        return ResponseEntity.noContent().build();
     }
 }

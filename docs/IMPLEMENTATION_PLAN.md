@@ -134,7 +134,7 @@ Do NOT worry about advanced Kafka sophistication before this works.
 
 ---
 
-# 5. FND-01 — Inspect Repository + Service Foundation
+# 5. FND-01 — Inspect Repository + Service Foundation ✅
 
 Required services:
 
@@ -213,7 +213,7 @@ At the end report:
 
 ---
 
-# 6. FND-02 — Local Infrastructure
+# 6. FND-02 — Local Infrastructure ✅
 
 Required:
 
@@ -246,7 +246,7 @@ for local development unless the repository already has a good equivalent.
 
 ---
 
-# 7. ACC-01 — Registration
+# 7. ACC-01 — Registration ✅
 
 Implement:
 
@@ -273,7 +273,7 @@ POST /api/v1/auth/register
 
 ---
 
-# 8. ACC-02 — Login + JWT
+# 8. ACC-02 — Login + JWT ✅
 
 Endpoint:
 
@@ -291,7 +291,7 @@ POST /api/v1/auth/login
 
 ---
 
-# 9. GWT-01 — Gateway Authentication
+# 9. GWT-01 — Gateway Authentication ✅
 
 Implement routing/security.
 
@@ -318,7 +318,7 @@ Also:
 
 ---
 
-# 10. META-01 — Metadata Schema
+# 10. META-01 — Metadata Schema ✅
 
 Create:
 
@@ -346,7 +346,7 @@ Follow `docs/TECHNICAL_DESIGN.md`.
 
 ---
 
-# 11. UPL-01 — Upload Schema
+# 11. UPL-01 — Upload Schema ✅
 
 Create:
 
@@ -382,7 +382,7 @@ Indexes match Technical Design.
 
 ---
 
-# 12. UPL-02 — Multipart Upload Initiation
+# 12. UPL-02 — Multipart Upload Initiation ✅
 
 Endpoint:
 
@@ -465,7 +465,7 @@ after impl stop after UPL-02.
 
 ---
 
-# 13. UPL-03 — Upload Part
+# 13. UPL-03 — Upload Part ✅
 
 Endpoint:
 
@@ -500,7 +500,7 @@ No unit Tests required.
 
 ---
 
-# 14. UPL-04 — Upload Status / Resume
+# 14. UPL-04 — Upload Status / Resume ✅
 
 Endpoint:
 
@@ -531,7 +531,7 @@ Example:
 
 ---
 
-# 15. UPL-05 — Complete Multipart Upload
+# 15. UPL-05 — Complete Multipart Upload ✅
 
 Endpoint:
 
@@ -565,7 +565,7 @@ Full Outbox/Kafka hardening comes on Day 4.
 
 ---
 
-# 16. META-02 — Minimal File Listing
+# 16. META-02 — Minimal File Listing ✅
 
 Implement enough Metadata functionality for:
 
@@ -584,7 +584,7 @@ GET /api/v1/files/{fileId}
 
 ---
 
-# 17. DNL-01 — Basic Download
+# 17. DNL-01 — Basic Download ✅
 
 Endpoint:
 
@@ -602,7 +602,7 @@ GET /api/v1/files/{fileId}/content
 
 ---
 
-# 18. DAY 1 CHECKPOINT
+# 18. DAY 1 CHECKPOINT ✅
 
 Stop adding features.
 
@@ -723,7 +723,7 @@ mark EXPIRED
 
 ---
 
-# 23. DNL-02 — HTTP Range
+# 23. DNL-02 — HTTP Range ✅
 
 Extend download to support:
 
@@ -748,7 +748,7 @@ Invalid ranges return an appropriate error.
 
 ---
 
-# 24. REL-01 — Resumable Upload Test
+# 24. REL-01 — Resumable Upload Test ✅
 
 Test:
 
@@ -769,7 +769,7 @@ Must pass.
 
 ---
 
-# 25. REL-02 — Resumable Download Test
+# 25. REL-02 — Resumable Download Test ✅
 
 Test:
 
@@ -810,7 +810,7 @@ Finish the Dropbox product functionality.
 
 ---
 
-# 28. META-03 — Folder APIs
+# 28. META-03 — Folder APIs ✅
 
 Implement:
 
@@ -1545,114 +1545,3 @@ Distributed locking
 ```
 
 ---
-
-# 57. Commit Strategy
-
-Prefer small commits.
-
-Examples:
-
-```text
-feat(account): add jwt authentication
-
-feat(upload): add multipart initiation
-
-feat(upload): persist multipart parts
-
-feat(upload): support resumable status
-
-feat(upload): add idempotent completion
-
-feat(download): support http range
-
-feat(metadata): add folder navigation
-
-feat(metadata): add file versioning
-
-feat(sharing): add expiring public links
-
-feat(events): publish upload completion via outbox
-
-feat(events): add idempotent metadata consumer
-
-feat(redis): cache file metadata
-
-feat(rate-limit): add distributed upload limiter
-```
-
-Avoid:
-
-```text
-feat: implemented backend
-```
-
----
-
-# 58. Recommended Claude Code Task Loop
-
-For each task:
-
-```text
-1. Give Claude task ID.
-
-2. Claude inspects relevant code.
-
-3. Claude explains intended changes.
-
-4. Claude implements.
-
-5. Claude runs tests.
-
-6. Review git diff.
-
-7. Run application/integration test.
-
-8. Commit.
-
-9. Move to next task.
-```
-
-If Claude proposes a design change:
-
-```text
-STOP
-```
-
-and evaluate it before allowing implementation.
-
----
-
-# 59. Start Here
-
-With both documents in place under `docs/`, launch Claude Code and send:
-
-```text
-Read docs/TECHNICAL_DESIGN.md and docs/IMPLEMENTATION_PLAN.md.
-
-These files are the source of truth for this Dropbox-Lite hackathon project.
-
-Do not modify any files yet.
-
-Inspect the repository and report:
-
-1. Current modules/services.
-2. Java version.
-3. Spring Boot version.
-4. Build system.
-5. Important dependencies.
-6. Existing infrastructure/configuration.
-7. Existing authentication/security implementation.
-8. Existing PostgreSQL, Redis, Kafka and MinIO integration.
-9. Existing reusable code.
-10. Conflicts with docs/TECHNICAL_DESIGN.md.
-11. Smallest changes required for FND-01.
-12. Any blocker that could threaten the Day 1 vertical slice.
-
-Do not redesign the architecture.
-
-Do not implement anything yet.
-
-Return only the FND-01 implementation proposal.
-```
-
-Then review the proposal before telling Claude to proceed.

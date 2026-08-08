@@ -15,12 +15,7 @@ import com.dropbox.upload_service.repository.UploadSessionRepository;
 import io.minio.ComposeObjectArgs;
 import io.minio.ComposeSource;
 import io.minio.MinioClient;
-import io.minio.RemoveObjectsArgs;
-import io.minio.Result;
-import io.minio.messages.DeleteError;
-import io.minio.messages.DeleteObject;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -49,7 +44,6 @@ import java.util.UUID;
  * mid-flight failure (MinIO down, metadata-service down) must leave the prior
  * checkpoint intact rather than roll it back.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UploadCompletionService {
@@ -61,6 +55,7 @@ public class UploadCompletionService {
     private final UploadPartRepository uploadPartRepository;
     private final MetadataServiceClient metadataServiceClient;
     private final MinioClient minioClient;
+    private final UploadTempPartsCleaner tempPartsCleaner;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -90,7 +85,7 @@ public class UploadCompletionService {
             session.setStatus(UploadStatus.STORAGE_COMPLETED);
             session = uploadSessionRepository.save(session);
 
-            cleanupTempParts(session);
+            tempPartsCleaner.cleanup(session);
         }
 
         MaterializeFileResponse materialized = materializeInMetadata(session);
@@ -132,27 +127,6 @@ public class UploadCompletionService {
                     .build());
         } catch (Exception e) {
             throw new DependencyUnavailableException("Failed to compose parts in storage backend", e);
-        }
-    }
-
-    /**
-     * Best-effort: the final object is already composed and durably recorded
-     * (STORAGE_COMPLETED) by the time this runs, so a cleanup failure here must
-     * not fail the request - it would just leave harmless orphaned temp objects.
-     */
-    private void cleanupTempParts(UploadSession session) {
-        try {
-            List<DeleteObject> toDelete = new ArrayList<>();
-            for (int partNumber = 1; partNumber <= session.getTotalParts(); partNumber++) {
-                toDelete.add(new DeleteObject(UploadObjectKeys.partObjectKey(session, partNumber)));
-            }
-            Iterable<Result<DeleteError>> results = minioClient.removeObjects(
-                    RemoveObjectsArgs.builder().bucket(bucket).objects(toDelete).build());
-            for (Result<DeleteError> result : results) {
-                result.get(); // force evaluation to actually issue the delete
-            }
-        } catch (Exception e) {
-            log.warn("Failed to clean up temporary parts for upload {}: {}", session.getId(), e.getMessage());
         }
     }
 

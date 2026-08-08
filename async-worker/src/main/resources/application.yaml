@@ -9,6 +9,10 @@ spring:
 server:
   port: 8085
 
+upload:
+  expire-sweep:
+    interval-ms: ${UPLOAD_EXPIRE_SWEEP_INTERVAL_MS:300000}
+
 eureka:
   client:
     service-url:

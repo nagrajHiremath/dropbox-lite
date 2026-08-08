@@ -45,13 +45,15 @@ class UploadCompletionServiceTest {
     private MetadataServiceClient metadataServiceClient;
     @Mock
     private MinioClient minioClient;
+    @Mock
+    private UploadTempPartsCleaner tempPartsCleaner;
 
     private UploadCompletionService service;
 
     @BeforeEach
     void setUp() {
         service = new UploadCompletionService(
-                uploadSessionRepository, uploadPartRepository, metadataServiceClient, minioClient);
+                uploadSessionRepository, uploadPartRepository, metadataServiceClient, minioClient, tempPartsCleaner);
         ReflectionTestUtils.setField(service, "bucket", "dropbox-files");
     }
 
@@ -117,7 +119,6 @@ class UploadCompletionServiceTest {
         when(uploadSessionRepository.findByIdAndUserId(uploadId, ownerId)).thenReturn(Optional.of(session));
         when(uploadPartRepository.findPartNumbersByUploadSessionId(uploadId)).thenReturn(List.of(1, 2));
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(minioClient.removeObjects(any())).thenReturn(List.of());
         when(metadataServiceClient.materializeFile(eq(ownerId), any(MaterializeFileRequest.class)))
                 .thenReturn(new MaterializeFileResponse(fileId, versionId, 1));
 
@@ -130,6 +131,7 @@ class UploadCompletionServiceTest {
         assertThat(session.getFileId()).isEqualTo(fileId);
 
         verify(minioClient, times(1)).composeObject(any());
+        verify(tempPartsCleaner, times(1)).cleanup(any());
 
         ArgumentCaptor<MaterializeFileRequest> requestCaptor = ArgumentCaptor.forClass(MaterializeFileRequest.class);
         verify(metadataServiceClient).materializeFile(eq(ownerId), requestCaptor.capture());
@@ -157,12 +159,12 @@ class UploadCompletionServiceTest {
 
         verify(uploadPartRepository, never()).findPartNumbersByUploadSessionId(any());
         verify(minioClient, never()).composeObject(any());
-        verify(minioClient, never()).removeObjects(any());
+        verify(tempPartsCleaner, never()).cleanup(any());
         verify(metadataServiceClient, times(1)).materializeFile(any(), any());
     }
 
     @Test
-    void repeatedCompletionReplaysWithoutSideEffects() {
+    void repeatedCompletionReplaysWithoutSideEffects() throws Exception {
         UUID ownerId = UUID.randomUUID();
         UUID uploadId = UUID.randomUUID();
         UUID fileId = UUID.randomUUID();
