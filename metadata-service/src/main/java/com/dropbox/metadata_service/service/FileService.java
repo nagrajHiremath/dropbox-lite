@@ -6,6 +6,7 @@ import com.dropbox.metadata_service.domain.Folder;
 import com.dropbox.metadata_service.dto.MoveFileRequest;
 import com.dropbox.metadata_service.dto.UpdateFileRequest;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
+import com.dropbox.metadata_service.exception.NameConflictException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileSpecifications;
@@ -69,6 +70,7 @@ public class FileService {
     @Transactional
     public FileEntity renameFile(UUID ownerId, UUID fileId, UpdateFileRequest request) {
         FileEntity file = requireActiveOwnedFile(ownerId, fileId);
+        assertNameAvailable(ownerId, file.getFolderId(), request.name(), fileId);
         file.setName(request.name());
         return fileRepository.save(file);
     }
@@ -84,6 +86,8 @@ public class FileService {
                 throw new InvalidRequestException("Destination folder is not active");
             }
         }
+
+        assertNameAvailable(ownerId, request.folderId(), file.getName(), fileId);
 
         file.setFolderId(request.folderId());
         return fileRepository.save(file);
@@ -143,6 +147,21 @@ public class FileService {
             file.setDeletedAt(Instant.now());
         }
         fileRepository.save(file);
+    }
+
+    private void assertNameAvailable(UUID ownerId, UUID folderId, String name, UUID excludeFileId) {
+        Specification<FileEntity> spec = Specification.allOf(
+                FileSpecifications.ownedBy(ownerId),
+                FileSpecifications.inFolder(folderId),
+                FileSpecifications.hasStatus(FileStatus.ACTIVE),
+                FileSpecifications.hasName(name)
+        );
+        if (excludeFileId != null) {
+            spec = spec.and(FileSpecifications.idNot(excludeFileId));
+        }
+        if (fileRepository.exists(spec)) {
+            throw new NameConflictException("A file named '" + name + "' already exists in the destination");
+        }
     }
 
     private FileEntity requireActiveOwnedFile(UUID ownerId, UUID fileId) {

@@ -1,12 +1,17 @@
 package com.dropbox.metadata_service.service;
 
+import com.dropbox.metadata_service.domain.FileEntity;
+import com.dropbox.metadata_service.domain.FileStatus;
 import com.dropbox.metadata_service.domain.FileVersion;
 import com.dropbox.metadata_service.domain.Folder;
 import com.dropbox.metadata_service.domain.FolderStatus;
 import com.dropbox.metadata_service.dto.MaterializeFileRequest;
 import com.dropbox.metadata_service.dto.MaterializeFileResponse;
+import com.dropbox.metadata_service.dto.MaterializeVersionRequest;
+import com.dropbox.metadata_service.exception.ConflictException;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
+import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +35,7 @@ import java.util.UUID;
 public class FileMaterializationService {
 
     private final FileVersionRepository fileVersionRepository;
+    private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
     private final FileVersionMaterializer materializer;
 
@@ -59,6 +65,37 @@ public class FileMaterializationService {
         }
 
         return toResponse(version);
+    }
+
+    /**
+     * VER-02: attaches a new version to an existing, owned, ACTIVE file.
+     * Idempotent per sourceUploadId like materialize() above. A DataIntegrityViolationException
+     * here can mean either this exact completion retried concurrently (source_upload_id
+     * collision - replay it) or a different concurrent version upload for the same file
+     * won the (file_id, version_number) race - the same protection restoreVersion (VER-03)
+     * already relies on. The latter surfaces as 409 for the caller to retry, matching
+     * restoreVersion's existing single-attempt-then-409 convention for this table.
+     */
+    public MaterializeFileResponse materializeVersion(UUID ownerId, MaterializeVersionRequest request) {
+        Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
+        if (existing.isPresent()) {
+            return toResponse(existing.get());
+        }
+
+        FileEntity file = fileRepository.findByIdAndOwnerId(request.fileId(), ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+        if (file.getStatus() != FileStatus.ACTIVE) {
+            throw new InvalidRequestException("File is not active");
+        }
+
+        try {
+            FileVersion version = materializer.createNextVersion(file, request);
+            return toResponse(version);
+        } catch (DataIntegrityViolationException e) {
+            return fileVersionRepository.findBySourceUploadId(request.sourceUploadId())
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new ConflictException("Concurrent version creation detected, please retry"));
+        }
     }
 
     private MaterializeFileResponse toResponse(FileVersion version) {

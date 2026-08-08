@@ -3,9 +3,11 @@ package com.dropbox.upload_service.service;
 import com.dropbox.upload_service.client.MetadataServiceClient;
 import com.dropbox.upload_service.domain.UploadSession;
 import com.dropbox.upload_service.domain.UploadStatus;
+import com.dropbox.upload_service.domain.UploadType;
 import com.dropbox.upload_service.dto.CompleteUploadResponse;
 import com.dropbox.upload_service.dto.MaterializeFileRequest;
 import com.dropbox.upload_service.dto.MaterializeFileResponse;
+import com.dropbox.upload_service.dto.MaterializeVersionRequest;
 import com.dropbox.upload_service.exception.DependencyUnavailableException;
 import com.dropbox.upload_service.exception.InvalidRequestException;
 import com.dropbox.upload_service.exception.InvalidUploadStateException;
@@ -131,6 +133,17 @@ public class UploadCompletionService {
     }
 
     private MaterializeFileResponse materializeInMetadata(UploadSession session) {
+        if (session.getUploadType() == UploadType.NEW_VERSION) {
+            MaterializeVersionRequest request = new MaterializeVersionRequest(
+                    session.getId(),
+                    session.getFileId(),
+                    session.getObjectKey(),
+                    session.getTotalSize(),
+                    null,
+                    null);
+            return metadataServiceClient.materializeVersion(session.getUserId(), request);
+        }
+
         MaterializeFileRequest request = new MaterializeFileRequest(
                 session.getId(),
                 session.getFolderId(),

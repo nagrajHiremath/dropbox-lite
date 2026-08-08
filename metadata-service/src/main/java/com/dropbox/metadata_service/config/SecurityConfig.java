@@ -19,6 +19,7 @@ public class SecurityConfig {
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers("/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 				.requestMatchers("/api/v1/public/**").permitAll()
+				.requestMatchers("/api/v1/internal/public-shares/**").permitAll()
 				.anyRequest().authenticated())
 			.addFilterBefore(new CurrentUserHeaderFilter(), UsernamePasswordAuthenticationFilter.class);
 		return http.build();

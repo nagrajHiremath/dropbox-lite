@@ -1,0 +1,964 @@
+{
+  "info": {
+    "name": "Dropbox Lite - Consolidated",
+    "description": "Single Postman environment for the whole Dropbox Lite system, routed through the API Gateway (localhost:8080) like a real client would - not direct-to-service. Auth is real JWT: Account Service > Register then Login captures a real access token and stores it as the collection's Bearer token, which every other request inherits automatically (Postman 'Authorization: Inherit from parent'). The gateway (JwtAuthenticationWebFilter) validates that token, strips any client-supplied identity headers, and re-derives X-User-Id from the token's own subject claim before forwarding - so no request in this collection needs to set an identity header manually.\n\nThe one exception: Admin / Internal > Expire Sweep calls upload-service directly (uploadBaseUrl), because /api/v1/internal/** intentionally has no gateway route - it's service-to-service only (normally triggered by async-worker on a schedule).\n\nBecause Register always creates a brand-new user (see its pre-request script), this collection's flow does NOT see metadata-service's DevDataSeeder sample data - that data belongs to a fixed dev-only user id that has no account-service login. Everything you test here you create yourself in the same run, which is also more representative of the real login -> use flow.\n\nSuggested end-to-end flow (Collection Runner, top to bottom):\n1. Account Service > Register (fresh email every run) -> Login (captures accessToken; everything below now authenticates automatically)\n2. Metadata Service > Folders > Create Folder (captures folderId)\n3. Upload Service > Uploads > Initiate Upload (captures uploadId) -> Upload Part -> Get Upload Status -> Complete Upload (captures fileId, versionId)\n4. Metadata Service > Files > Get File by Id / List Files - My Files (root) - confirm it appears\n5. Download Service > Download File - Full / Range variants - confirm bytes round-trip\n6. Metadata Service > Files > Rename File / Move File - confirm metadata updates\n7. Upload Service > Uploads > Initiate New Version Upload (reuses fileId, captures a new uploadId) -> Upload Part -> Complete Upload (captures a new versionId)\n8. Metadata Service > Versions > List Versions -> Restore Version (captures versionId again, now pointing at the restored-as-new-current version)\n9. Metadata Service > Sharing > Create Share (captures shareId, shareToken) -> Public > Get Public Share -> Download Service > Download Public Share Content -> Sharing > Revoke Share\n10. Metadata Service > Files > Trash File -> Restore File -> Permanently Delete File",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string", "description": "API Gateway - used by every request except the one internal-only exception below" },
+    { "key": "uploadBaseUrl", "value": "http://localhost:8083", "type": "string", "description": "upload-service, direct - ONLY for Admin / Internal > Expire Sweep, which has no gateway route" },
+    { "key": "email", "value": "", "type": "string", "description": "Auto-generated fresh by Register's pre-request script; Login reuses it." },
+    { "key": "password", "value": "Password123!", "type": "string", "description": "Used by both Register and Login." },
+    { "key": "displayName", "value": "Postman Test User", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string", "description": "Auto-filled by Login. This is the collection's inherited Bearer token - every request below picks it up automatically." },
+    { "key": "userId", "value": "", "type": "string", "description": "Auto-filled by Login, for reference/logging only - identity is now derived by the gateway from the JWT itself, not sent as a header." },
+    { "key": "folderId", "value": "", "type": "string", "description": "Auto-filled by Create Folder." },
+    { "key": "parentId", "value": "", "type": "string", "description": "Used as a request query param value" },
+    { "key": "fileId", "value": "", "type": "string", "description": "Auto-filled by Complete Upload." },
+    { "key": "versionId", "value": "", "type": "string", "description": "Auto-filled by Complete Upload / Restore Version." },
+    { "key": "shareId", "value": "", "type": "string", "description": "Auto-filled by Create Share." },
+    { "key": "shareToken", "value": "", "type": "string", "description": "Auto-filled by Create Share. Raw token, shown once." },
+    { "key": "uploadId", "value": "", "type": "string", "description": "Auto-filled by Initiate Upload / Initiate New Version Upload." },
+    { "key": "partNumber", "value": "1", "type": "string" },
+    { "key": "idempotencyKey", "value": "", "type": "string", "description": "Optional. Set any string to test idempotent replay of Initiate Upload." },
+    { "key": "rangeStart", "value": "0", "type": "string" },
+    { "key": "rangeEnd", "value": "9", "type": "string" },
+    { "key": "suffixLength", "value": "5", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Account Service",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fresh email every run so re-running the collection never 409s on email-already-in-use.",
+                  "pm.collectionVariables.set('email', 'postman-' + Date.now() + '@dropboxlite.test');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    console.log('Registered user id:', body.id, 'email:', body.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"{{displayName}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "description": "Public (no token). Creates the user + default storage quota. email is regenerated fresh by this request's own pre-request script every time it runs."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "    pm.collectionVariables.set('userId', body.userId);",
+                  "    console.log('accessToken captured - userId set to', body.userId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Public (no token). Reuses whatever email/password Register just set. Captures accessToken into the collection variable every other request in this collection inherits as its Bearer token - nothing else needs manual auth setup."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metadata Service",
+      "item": [
+        {
+          "name": "Folders",
+          "item": [
+            {
+              "name": "Create Folder",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('folderId', body.id);",
+                      "    console.log('folderId set to', body.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"New Folder\",\n  \"parentId\": null\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders"]
+                }
+              }
+            },
+            {
+              "name": "Get Folder by Id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders/{{folderId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders", "{{folderId}}"]
+                }
+              }
+            },
+            {
+              "name": "List Root Folders",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders?page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "Omit parentId for root. My Files root view = this + List Files (root)."
+              }
+            },
+            {
+              "name": "List Folder Children (by parentId query)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders?parentId={{parentId}}&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders"],
+                  "query": [
+                    { "key": "parentId", "value": "{{parentId}}" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Folder Children (by path id)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders/{{folderId}}/children?page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders", "{{folderId}}", "children"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Rename or Move Folder",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Renamed Folder\",\n  \"parentId\": null\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders/{{folderId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders", "{{folderId}}"]
+                },
+                "description": "Null fields are left unchanged. Set parentId to move the folder."
+              }
+            },
+            {
+              "name": "Trash Folder",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders/{{folderId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders", "{{folderId}}"]
+                }
+              }
+            },
+            {
+              "name": "Restore Folder",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/folders/{{folderId}}/restore",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "folders", "{{folderId}}", "restore"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Files",
+          "item": [
+            {
+              "name": "Get File by Id",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}"]
+                }
+              }
+            },
+            {
+              "name": "List Files - My Files (root)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Files - by Folder",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?folderId={{folderId}}&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "folderId", "value": "{{folderId}}" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Files - Recent",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?view=recent&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "view", "value": "recent" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Files - Photos (type=image)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?type=image&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "type", "value": "image" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Files - Videos (type=video)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?type=video&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "type", "value": "video" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "List Files - Trash",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files?status=trashed&page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files"],
+                  "query": [
+                    { "key": "status", "value": "trashed" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Rename File",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Renamed-File.pdf\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}"]
+                }
+              }
+            },
+            {
+              "name": "Rename File - Name Conflict (409)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"CHANGE-ME-to-another-owned-file's-name-in-the-same-folder\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}"]
+                },
+                "description": "META-05. This flow's Register step creates a fresh user with no pre-seeded files, so there's nothing to collide with out of the box - upload two files into the same folder (Upload Service > Uploads, twice, with different fileName values), note both fileIds, set fileId to the second one, and set the body's name to the first file's name. Expect 409 NAME_CONFLICT. Renaming a file to its own current name is NOT a conflict (the file being renamed is excluded from the check)."
+              }
+            },
+            {
+              "name": "Move File",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"folderId\": \"{{folderId}}\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/move",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "move"]
+                },
+                "description": "folderId: null moves the file to root. META-05: also 409s NAME_CONFLICT if the destination folder already has an ACTIVE file with this file's name."
+              }
+            },
+            {
+              "name": "Trash File",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}"]
+                }
+              }
+            },
+            {
+              "name": "Restore File",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/restore",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "restore"]
+                }
+              }
+            },
+            {
+              "name": "Permanently Delete File",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/permanent",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "permanent"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Versions",
+          "item": [
+            {
+              "name": "List Versions",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/versions?page=0&size=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "versions"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "Run Upload Service > Uploads > Initiate New Version Upload a couple of times against the same fileId first to build up multiple versions to see here."
+              }
+            },
+            {
+              "name": "Restore Version",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('versionId', body.id);",
+                      "    console.log('versionId set to restored (new current) version', body.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/versions/{{versionId}}/restore",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "versions", "{{versionId}}", "restore"]
+                },
+                "description": "Creates a new current version copying the target version's storage reference (restoring v1 when v3 is current creates v4 - old versions remain unchanged)."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sharing",
+          "item": [
+            {
+              "name": "Create Share",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('shareId', body.id);",
+                      "    pm.collectionVariables.set('shareToken', body.token);",
+                      "    console.log('shareId set to', body.id, '- shareToken captured (shown once)');",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permission\": \"VIEW\",\n  \"expiresAt\": null\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/shares",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "shares"]
+                },
+                "description": "The raw token is only returned in this response - auto-captured into shareId/shareToken for the Public and Downloads requests below."
+              }
+            },
+            {
+              "name": "List Shares for File",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/shares",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "shares"]
+                }
+              }
+            },
+            {
+              "name": "Revoke Share",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/shares/{{shareId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "shares", "{{shareId}}"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Public",
+          "item": [
+            {
+              "name": "Get Public Share",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/public/shares/{{shareToken}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "public", "shares", "{{shareToken}}"]
+                },
+                "description": "SHR-02: explicitly No Auth - no token needed or sent, proving this endpoint really is public. Returns 404 for unknown, revoked, or expired tokens."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Upload Service",
+      "item": [
+        {
+          "name": "Uploads",
+          "item": [
+            {
+              "name": "Initiate Upload",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('uploadId', body.uploadId);",
+                      "    console.log('uploadId set to', body.uploadId);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Idempotency-Key", "value": "{{idempotencyKey}}", "disabled": true },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fileName\": \"test-file.txt\",\n  \"folderId\": null,\n  \"size\": 20,\n  \"mimeType\": \"text/plain\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/uploads",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "uploads"]
+                },
+                "description": "chunkSize/totalParts are server-selected. For a small test file under 8MiB, totalParts will always be 1, and the single part's expected size equals 'size' exactly - the byte count you PUT for part 1 must match 'size' precisely (MinIO rejects a short/long stream against a declared size). To test folder validation, replace the body's \"folderId\": null with \"folderId\": \"{{folderId}}\" (e.g. after Metadata Service > Folders > Create Folder)."
+              }
+            },
+            {
+              "name": "Initiate New Version Upload",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('uploadId', body.uploadId);",
+                      "    console.log('uploadId set to', body.uploadId);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Idempotency-Key", "value": "{{idempotencyKey}}", "disabled": true },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"size\": 20,\n  \"mimeType\": \"text/plain\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/uploads",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "files", "{{fileId}}", "uploads"]
+                },
+                "description": "VER-01. Starts a new-version multipart upload for the existing file in the fileId variable (e.g. set by a prior Complete Upload) - validates ownership and that the file is ACTIVE. No fileName/folderId in the body (the file keeps its existing name/location); mimeType is optional and falls back to the file's current mimeType if omitted. From here, use the same Upload Part / Get Upload Status / Complete Upload requests below. Complete Upload's response fileId will equal this fileId (a new version, not a new file)."
+              }
+            },
+            {
+              "name": "Upload Part",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "12345678901234567890",
+                  "options": { "raw": { "language": "text" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/uploads/{{uploadId}}/parts/{{partNumber}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "uploads", "{{uploadId}}", "parts", "{{partNumber}}"]
+                },
+                "description": "Raw binary/text body, streamed directly - not @RequestBody, no multipart/form-data. The default body here is exactly 20 bytes to match the default Initiate Upload 'size' of 20. If you change one, change the other to match. To upload a real binary file instead, switch Body mode to 'binary' and select a file, and set 'size' in Initiate Upload to that file's exact byte length."
+              }
+            },
+            {
+              "name": "Get Upload Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/uploads/{{uploadId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "uploads", "{{uploadId}}"]
+                },
+                "description": "Returns status, totalParts, and uploadedParts - compare against 1..totalParts to see what's still missing (resume)."
+              }
+            },
+            {
+              "name": "Complete Upload",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    if (body.fileId) {",
+                      "        pm.collectionVariables.set('fileId', body.fileId);",
+                      "        console.log('fileId set to', body.fileId);",
+                      "    }",
+                      "    if (body.versionId) {",
+                      "        pm.collectionVariables.set('versionId', body.versionId);",
+                      "        console.log('versionId set to', body.versionId);",
+                      "    }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/uploads/{{uploadId}}/complete",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "uploads", "{{uploadId}}", "complete"]
+                },
+                "description": "Composes all parts in MinIO, then materializes the file/version in metadata-service (direct service-to-service call). Safe to call repeatedly - already-COMPLETED replays, STORAGE_COMPLETED resumes without recomposing. Auto-captures fileId/versionId so the Metadata Service and Download Service requests can use them immediately."
+              }
+            },
+            {
+              "name": "Abort Upload",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/uploads/{{uploadId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "uploads", "{{uploadId}}"]
+                },
+                "description": "UPL-07. Discards any temp part objects uploaded so far and marks the session ABORTED. Only valid from INITIATED/UPLOADING/FAILED/EXPIRED - returns 409 from COMPLETING/STORAGE_COMPLETED/COMPLETED. Repeated abort on an already-ABORTED session is a no-op (204)."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin / Internal",
+          "item": [
+            {
+              "name": "Expire Sweep (Internal - Worker Trigger)",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "00000000-0000-0000-0000-000000000000", "description": "Sentinel value async-worker sends - the sweep is not scoped to a single owner, this only needs to be a well-formed UUID to satisfy upload-service's CurrentUserHeaderFilter." }
+                ],
+                "url": {
+                  "raw": "{{uploadBaseUrl}}/api/v1/internal/uploads/expire-sweep",
+                  "host": ["{{uploadBaseUrl}}"],
+                  "path": ["api", "v1", "internal", "uploads", "expire-sweep"]
+                },
+                "description": "UPL-08. Service-to-service only - no gateway route exists for /api/v1/internal/**, so this is the one request in the collection that goes directly to upload-service (uploadBaseUrl) with a raw X-User-Id header instead of through the gateway with a JWT. Normally triggered on a schedule by async-worker. Finds sessions with expires_at in the past and status still INITIATED/UPLOADING, atomically claims and marks each EXPIRED, and discards their temp part objects. Returns { \"expiredCount\": N }. To see this do something, Initiate an Upload, don't complete it, temporarily shorten the session expiry (or wait it out), then call this."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Download Service",
+      "item": [
+        {
+          "name": "Download File - Full",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "content"]
+            },
+            "description": "Expect 200 OK, full bytes, with Content-Type, Content-Length, Content-Disposition: attachment, and Accept-Ranges: bytes in the response headers."
+          }
+        },
+        {
+          "name": "Download File - Range (start-end)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes={{rangeStart}}-{{rangeEnd}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "content"]
+            },
+            "description": "Expect 206 Partial Content with Content-Range: bytes {{rangeStart}}-{{rangeEnd}}/<totalSize> and Content-Length = (rangeEnd - rangeStart + 1)."
+          }
+        },
+        {
+          "name": "Download File - Range (open-ended)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes={{rangeStart}}-" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "content"]
+            },
+            "description": "\"bytes=N-\" means from byte N to the end of the file. Expect 206 Partial Content."
+          }
+        },
+        {
+          "name": "Download File - Range (suffix)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes=-{{suffixLength}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "content"]
+            },
+            "description": "\"bytes=-N\" means the last N bytes of the file. Expect 206 Partial Content."
+          }
+        },
+        {
+          "name": "Download File - Invalid Range (416)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes=999999999-999999999" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "content"]
+            },
+            "description": "Start is far beyond any realistic file size, so this range is unsatisfiable. Expect 416 Requested Range Not Satisfiable with Content-Range: bytes */<totalSize>."
+          }
+        },
+        {
+          "name": "Download Version Content - Full",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/versions/{{versionId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "versions", "{{versionId}}", "content"]
+            },
+            "description": "VER-03. Downloads an arbitrary (not necessarily current) version's bytes - resolved and streamed the same way as Download File - Full, just against versionId instead of the file's current version. Expect 200 OK with the full bytes of that specific version."
+          }
+        },
+        {
+          "name": "Download Version Content - Range (start-end)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes={{rangeStart}}-{{rangeEnd}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/versions/{{versionId}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "versions", "{{versionId}}", "content"]
+            },
+            "description": "VER-03: old-version download supports Range too - same ByteRangeParser/streaming path as Download File - Range (start-end). Expect 206 Partial Content with Content-Range: bytes {{rangeStart}}-{{rangeEnd}}/<versionSize>."
+          }
+        },
+        {
+          "name": "Download Public Share Content - Full",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/public/shares/{{shareToken}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "public", "shares", "{{shareToken}}", "content"]
+            },
+            "description": "SHR-02: explicitly No Auth - anonymous, no-JWT public share download. Run Metadata Service > Sharing > Create Share first to populate shareToken. Expect 200 OK with the shared file's current-version bytes."
+          }
+        },
+        {
+          "name": "Download Public Share Content - Range (start-end)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [
+              { "key": "Range", "value": "bytes={{rangeStart}}-{{rangeEnd}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/public/shares/{{shareToken}}/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "public", "shares", "{{shareToken}}", "content"]
+            },
+            "description": "SHR-02: public share downloads support Range too, same streaming path as the authenticated endpoints. Expect 206 Partial Content."
+          }
+        },
+        {
+          "name": "Download Public Share Content - Unknown/Revoked/Expired Token (404)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/public/shares/not-a-real-token/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "public", "shares", "not-a-real-token", "content"]
+            },
+            "description": "Expect 404 Not Found. metadata-service returns the same 404 for an unknown token, a REVOKED share, an EXPIRED share, or a share whose file is gone - none of that is distinguishable from outside, by design."
+          }
+        },
+        {
+          "name": "Download File - Unknown fileId (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/00000000-0000-0000-0000-000000000000/content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "00000000-0000-0000-0000-000000000000", "content"]
+            },
+            "description": "A random, non-existent fileId. Expect 404 Not Found (metadata-service reports no such file/owner match)."
+          }
+        }
+      ]
+    }
+  ]
+}

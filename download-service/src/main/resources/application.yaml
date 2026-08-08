@@ -31,10 +31,3 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-
-# TEMPORARY - enables the diagnostic log.debug(...) calls added to FileDownloadController
-# for the DNL-02 Range-header investigation. Remove this block together with those log
-# lines once resolved.
-logging:
-  level:
-    com.dropbox.download_service.controller.FileDownloadController: DEBUG

@@ -53,4 +53,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse("INVALID_REQUEST", ex.getMessage(), Instant.now(), null));
     }
+
+    @ExceptionHandler(VersionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleVersionConflict(VersionConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("VERSION_CONFLICT", ex.getMessage(), Instant.now(), null));
+    }
 }

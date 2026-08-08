@@ -681,7 +681,7 @@ rather than blindly finalize.
 
 ---
 
-# 21. UPL-07 — Abort Upload
+# 21. UPL-07 — Abort Upload ✅
 
 Endpoint:
 
@@ -698,7 +698,7 @@ DELETE /api/v1/uploads/{uploadId}
 
 ---
 
-# 22. UPL-08 — Expired Upload Cleanup
+# 22. UPL-08 — Expired Upload Cleanup ✅
 
 Worker identifies:
 
@@ -867,7 +867,7 @@ GET /files?...
 
 ---
 
-# 30. META-05 — Rename / Move
+# 30. META-05 — Rename / Move ✅
 
 Implement:
 
@@ -886,7 +886,7 @@ POST /files/{fileId}/move
 
 ---
 
-# 31. META-06 — Trash / Restore
+# 31. META-06 — Trash / Restore ✅
 
 Normal delete:
 
@@ -911,7 +911,7 @@ POST /files/{fileId}/restore
 
 ---
 
-# 32. VER-01 — New Version Upload
+# 32. VER-01 — New Version Upload ✅
 
 Endpoint:
 
@@ -935,7 +935,7 @@ upload_type = NEW_VERSION
 
 ---
 
-# 33. VER-02 — Version Finalization
+# 33. VER-02 — Version Finalization ✅
 
 On completion:
 
@@ -956,9 +956,11 @@ update current_version_id
     - distributed lock
     - DB unique constraint
 
+**Pending:** the DB unique constraint (`file_versions(file_id, version_number)`) is implemented and enforces correctness on its own. The distributed lock layer is not yet implemented - it depends on UPL-06 (Distributed Completion Lock), which has not been started and requires Redis infrastructure not yet wired into any service.
+
 ---
 
-# 34. VER-03 — Version APIs
+# 34. VER-03 — Version APIs ✅
 
 Implement:
 
@@ -992,7 +994,7 @@ Old-version download supports HTTP Range.
 
 ---
 
-# 35. SHR-01 — Share Management
+# 35. SHR-01 — Share Management ✅
 
 Implement:
 
@@ -1015,7 +1017,7 @@ DELETE /shares/{shareId}
 
 ---
 
-# 36. SHR-02 — Public Share
+# 36. SHR-02 — Public Share ✅
 
 Implement:
 
@@ -1036,7 +1038,7 @@ GET /public/shares/{token}/content
 
 ---
 
-# 37. DEL-01 — Permanent Delete
+# 37. DEL-01 — Permanent Delete ✅
 
 Endpoint:
 
@@ -1052,6 +1054,8 @@ Do NOT synchronously delete all MinIO objects inside the HTTP request.
 - All version object keys are discoverable
 - Async cleanup can be triggered
 - User operation remains bounded
+
+**Pending:** this task's own scope is complete - metadata lifecycle transition, discoverable version object keys (queryable by file_id via file_versions), bounded operation (status flip only, no synchronous MinIO calls). Actually executing async physical MinIO cleanup depends on WRK-02 (Permanent Storage Cleanup) plus the OBX-02/EVT-01 Kafka/Outbox pipeline it consumes from, none of which are implemented yet.
 
 ---
 

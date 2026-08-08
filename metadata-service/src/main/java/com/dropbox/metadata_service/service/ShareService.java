@@ -2,9 +2,11 @@ package com.dropbox.metadata_service.service;
 
 import com.dropbox.metadata_service.domain.FileEntity;
 import com.dropbox.metadata_service.domain.FileStatus;
+import com.dropbox.metadata_service.domain.FileVersion;
 import com.dropbox.metadata_service.domain.ShareLink;
 import com.dropbox.metadata_service.domain.ShareStatus;
 import com.dropbox.metadata_service.dto.CreateShareRequest;
+import com.dropbox.metadata_service.dto.FileContentInfoResponse;
 import com.dropbox.metadata_service.exception.ConflictException;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
@@ -93,6 +95,39 @@ public class ShareService {
 
     @Transactional(readOnly = true)
     public PublicShareView resolvePublicShare(String rawToken) {
+        ActiveShare active = resolveActiveShare(rawToken);
+        FileEntity file = active.file();
+
+        Long sizeBytes = file.getCurrentVersionId() == null ? null
+                : fileVersionRepository.findById(file.getCurrentVersionId())
+                        .map(FileVersion::getSizeBytes)
+                        .orElse(null);
+
+        return new PublicShareView(file, active.share().getPermission(), sizeBytes);
+    }
+
+    /**
+     * SHR-02 content: same token/ACTIVE/expiry/file-ACTIVE validation as
+     * resolvePublicShare above, plus the current version's storage reference -
+     * objectKey is deliberately never exposed on PublicShareResponse, so this is
+     * service-to-service only (Download Service calls it directly, see
+     * InternalPublicShareController).
+     */
+    @Transactional(readOnly = true)
+    public FileContentInfoResponse resolvePublicShareContent(String rawToken) {
+        ActiveShare active = resolveActiveShare(rawToken);
+        FileEntity file = active.file();
+
+        if (file.getCurrentVersionId() == null) {
+            throw new ResourceNotFoundException("Share not found");
+        }
+        FileVersion version = fileVersionRepository.findById(file.getCurrentVersionId())
+                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+
+        return new FileContentInfoResponse(file.getName(), file.getMimeType(), version.getObjectKey(), version.getSizeBytes());
+    }
+
+    private ActiveShare resolveActiveShare(String rawToken) {
         String tokenHash = hashToken(rawToken);
         ShareLink share = shareLinkRepository.findByTokenHash(tokenHash)
                 .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
@@ -110,12 +145,10 @@ public class ShareService {
             throw new ResourceNotFoundException("Share not found");
         }
 
-        Long sizeBytes = file.getCurrentVersionId() == null ? null
-                : fileVersionRepository.findById(file.getCurrentVersionId())
-                        .map(v -> v.getSizeBytes())
-                        .orElse(null);
+        return new ActiveShare(share, file);
+    }
 
-        return new PublicShareView(file, share.getPermission(), sizeBytes);
+    private record ActiveShare(ShareLink share, FileEntity file) {
     }
 
     private static String generateToken() {

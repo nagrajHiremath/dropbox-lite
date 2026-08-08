@@ -7,6 +7,7 @@ import com.dropbox.metadata_service.dto.MaterializeFileRequest;
 import com.dropbox.metadata_service.dto.MaterializeFileResponse;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
+import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import org.junit.jupiter.api.Test;
@@ -31,12 +32,14 @@ class FileMaterializationServiceTest {
     @Mock
     private FileVersionRepository fileVersionRepository;
     @Mock
+    private FileRepository fileRepository;
+    @Mock
     private FolderRepository folderRepository;
     @Mock
     private FileVersionMaterializer materializer;
 
     private FileMaterializationService service() {
-        return new FileMaterializationService(fileVersionRepository, folderRepository, materializer);
+        return new FileMaterializationService(fileVersionRepository, fileRepository, folderRepository, materializer);
     }
 
     private MaterializeFileRequest request(UUID sourceUploadId, UUID folderId) {

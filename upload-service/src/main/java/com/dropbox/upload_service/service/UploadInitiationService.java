@@ -5,8 +5,10 @@ import com.dropbox.upload_service.domain.IdempotencyKey;
 import com.dropbox.upload_service.domain.UploadSession;
 import com.dropbox.upload_service.domain.UploadStatus;
 import com.dropbox.upload_service.domain.UploadType;
+import com.dropbox.upload_service.dto.FileInfo;
 import com.dropbox.upload_service.dto.InitiateUploadRequest;
 import com.dropbox.upload_service.dto.InitiateUploadResponse;
+import com.dropbox.upload_service.dto.InitiateVersionUploadRequest;
 import com.dropbox.upload_service.exception.DependencyUnavailableException;
 import com.dropbox.upload_service.exception.IdempotencyConflictException;
 import com.dropbox.upload_service.repository.UploadSessionRepository;
@@ -28,6 +30,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -35,6 +38,7 @@ import java.util.UUID;
 public class UploadInitiationService {
 
     private static final String OPERATION = "INITIATE_UPLOAD";
+    private static final String VERSION_OPERATION = "INITIATE_VERSION_UPLOAD";
     private static final long DEFAULT_CHUNK_SIZE = 8L * 1024 * 1024; // 8 MiB, matches the design doc's example
     private static final int MAX_PARTS = 10_000; // MinIO composeObject source-object limit
     private static final int MAX_POLL_ATTEMPTS = 10;
@@ -56,22 +60,48 @@ public class UploadInitiationService {
         if (idempotencyKey == null) {
             return createSession(ownerId, request);
         }
-
         String requestHash = hashRequest(ownerId, request);
+        return withIdempotency(ownerId, OPERATION, idempotencyKey, requestHash, () -> createSession(ownerId, request));
+    }
 
-        if (!tryReserve(ownerId, idempotencyKey, requestHash)) {
-            return awaitReservationOwner(ownerId, idempotencyKey, requestHash);
+    /**
+     * VER-01: same session/part/status/complete/abort machinery as initiate()
+     * above, just seeded with uploadType=NEW_VERSION and the target file's id
+     * instead of a folderId/new FileEntity. requireOwnedActiveFile does the
+     * ownership check; the file's existing name/mimeType carry over unless the
+     * caller overrides mimeType.
+     */
+    public InitiateUploadResponse initiateNewVersion(UUID ownerId, UUID fileId, InitiateVersionUploadRequest request,
+                                                       String idempotencyKey) {
+        if (idempotencyKey == null) {
+            return createVersionSession(ownerId, fileId, request);
+        }
+        String requestHash = hashVersionRequest(ownerId, fileId, request);
+        return withIdempotency(ownerId, VERSION_OPERATION, idempotencyKey, requestHash,
+                () -> createVersionSession(ownerId, fileId, request));
+    }
+
+    /**
+     * Shared Idempotency-Key reserve/execute/finalize dance for both initiation
+     * paths. operation scopes the reservation so a NEW_FILE and NEW_VERSION
+     * request can never collide even if a caller reused the same key value for
+     * both by mistake.
+     */
+    private InitiateUploadResponse withIdempotency(UUID ownerId, String operation, String idempotencyKey,
+                                                     String requestHash, Supplier<InitiateUploadResponse> action) {
+        if (!tryReserve(ownerId, operation, idempotencyKey, requestHash)) {
+            return awaitReservationOwner(ownerId, operation, idempotencyKey, requestHash);
         }
 
         InitiateUploadResponse response;
         try {
-            response = createSession(ownerId, request);
+            response = action.get();
         } catch (RuntimeException e) {
-            idempotencyKeyWriter.release(ownerId, OPERATION, idempotencyKey);
+            idempotencyKeyWriter.release(ownerId, operation, idempotencyKey);
             throw e;
         }
 
-        idempotencyKeyWriter.finalizeSuccess(ownerId, OPERATION, idempotencyKey, response.uploadId(), 201, serialize(response));
+        idempotencyKeyWriter.finalizeSuccess(ownerId, operation, idempotencyKey, response.uploadId(), 201, serialize(response));
         return response;
     }
 
@@ -113,11 +143,40 @@ public class UploadInitiationService {
                 session.getId(), session.getChunkSize(), session.getTotalParts(), session.getStatus().name());
     }
 
-    private boolean tryReserve(UUID ownerId, String idempotencyKey, String requestHash) {
+    private InitiateUploadResponse createVersionSession(UUID ownerId, UUID fileId, InitiateVersionUploadRequest request) {
+        FileInfo file = metadataServiceClient.requireOwnedActiveFile(fileId, ownerId);
+
+        ensureStorageBackendReachable();
+
+        long chunkSize = selectChunkSize(request.size());
+        int totalParts = calculateTotalParts(request.size(), chunkSize);
+        String objectKey = "dropbox-files/%s/%s/data".formatted(ownerId, UUID.randomUUID());
+        String mimeType = request.mimeType() != null ? request.mimeType() : file.mimeType();
+
+        UploadSession session = UploadSession.builder()
+                .userId(ownerId)
+                .fileId(fileId)
+                .uploadType(UploadType.NEW_VERSION)
+                .fileName(file.name())
+                .mimeType(mimeType)
+                .totalSize(request.size())
+                .chunkSize(chunkSize)
+                .totalParts(totalParts)
+                .objectKey(objectKey)
+                .status(UploadStatus.INITIATED)
+                .expiresAt(Instant.now().plus(Duration.ofHours(sessionExpirationHours)))
+                .build();
+        session = uploadSessionRepository.save(session);
+
+        return new InitiateUploadResponse(
+                session.getId(), session.getChunkSize(), session.getTotalParts(), session.getStatus().name());
+    }
+
+    private boolean tryReserve(UUID ownerId, String operation, String idempotencyKey, String requestHash) {
         IdempotencyKey record = IdempotencyKey.builder()
                 .userId(ownerId)
                 .idempotencyKey(idempotencyKey)
-                .operation(OPERATION)
+                .operation(operation)
                 .requestHash(requestHash)
                 .status("IN_PROGRESS")
                 .expiresAt(Instant.now().plus(Duration.ofHours(sessionExpirationHours)))
@@ -131,7 +190,7 @@ public class UploadInitiationService {
             // mechanism itself, not a fault). Deliberately no exception/stack trace
             // here - awaitReservationOwner() looks up and handles the winner next.
             log.debug("Idempotency-Key reservation lost the race (expected): userId={}, operation={}, idempotencyKey={}",
-                    ownerId, OPERATION, idempotencyKey);
+                    ownerId, operation, idempotencyKey);
             return false;
         }
     }
@@ -141,9 +200,10 @@ public class UploadInitiationService {
      * work is a couple of fast calls, not a long-running operation) and replay its
      * result. A hash mismatch means the same key was reused for a different request.
      */
-    private InitiateUploadResponse awaitReservationOwner(UUID ownerId, String idempotencyKey, String requestHash) {
+    private InitiateUploadResponse awaitReservationOwner(UUID ownerId, String operation, String idempotencyKey,
+                                                           String requestHash) {
         for (int attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-            Optional<IdempotencyKey> found = idempotencyKeyWriter.find(ownerId, OPERATION, idempotencyKey);
+            Optional<IdempotencyKey> found = idempotencyKeyWriter.find(ownerId, operation, idempotencyKey);
             if (found.isEmpty()) {
                 // The reservation holder's work failed and released it; stop waiting so
                 // the caller can retry cleanly rather than waiting out the full timeout.
@@ -200,6 +260,20 @@ public class UploadInitiationService {
                 ownerId.toString(),
                 request.fileName(),
                 String.valueOf(request.folderId()),
+                String.valueOf(request.size()),
+                String.valueOf(request.mimeType()));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private String hashVersionRequest(UUID ownerId, UUID fileId, InitiateVersionUploadRequest request) {
+        String canonical = String.join("|",
+                ownerId.toString(),
+                fileId.toString(),
                 String.valueOf(request.size()),
                 String.valueOf(request.mimeType()));
         try {

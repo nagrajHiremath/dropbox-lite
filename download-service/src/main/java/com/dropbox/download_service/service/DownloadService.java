@@ -34,6 +34,16 @@ public class DownloadService {
         return new ResolvedFile(info.fileName(), info.mimeType(), info.objectKey(), info.sizeBytes());
     }
 
+    public ResolvedFile resolveVersion(UUID ownerId, UUID fileId, UUID versionId) {
+        FileContentInfoResponse info = metadataServiceClient.getVersion(ownerId, fileId, versionId);
+        return new ResolvedFile(info.fileName(), info.mimeType(), info.objectKey(), info.sizeBytes());
+    }
+
+    public ResolvedFile resolvePublicShare(String token) {
+        FileContentInfoResponse info = metadataServiceClient.getPublicShareContent(token);
+        return new ResolvedFile(info.fileName(), info.mimeType(), info.objectKey(), info.sizeBytes());
+    }
+
     public void streamTo(String objectKey, OutputStream outputStream) throws IOException {
         try (InputStream objectStream = minioClient.getObject(GetObjectArgs.builder()
                 .bucket(bucket)

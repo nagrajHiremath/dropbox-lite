@@ -29,6 +29,7 @@ public class SecurityConfig {
 			.securityContext(securityContext -> securityContext.securityContextRepository(securityContextRepository))
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers("/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+				.requestMatchers("/api/v1/public/**").permitAll()
 				.anyRequest().authenticated())
 			.addFilterBefore(new CurrentUserHeaderFilter(securityContextRepository), UsernamePasswordAuthenticationFilter.class);
 		return http.build();

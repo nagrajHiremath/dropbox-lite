@@ -4,6 +4,7 @@ import com.dropbox.metadata_service.domain.FileEntity;
 import com.dropbox.metadata_service.domain.FileStatus;
 import com.dropbox.metadata_service.domain.FileVersion;
 import com.dropbox.metadata_service.dto.MaterializeFileRequest;
+import com.dropbox.metadata_service.dto.MaterializeVersionRequest;
 import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +56,39 @@ class FileVersionMaterializer {
                 .build();
         // Flush immediately so a constraint violation surfaces here, synchronously,
         // rather than being deferred to an implicit flush later in this method.
+        version = fileVersionRepository.saveAndFlush(version);
+
+        file.setCurrentVersionId(version.getId());
+        fileRepository.save(file);
+
+        return version;
+    }
+
+    /**
+     * Attaches a new version to an EXISTING file (VER-02), rather than creating
+     * a new FileEntity. versionNumber is next-after-current-max, protected by
+     * file_versions' (file_id, version_number) unique constraint - the same
+     * mechanism VER-03's restoreVersion already relies on for this table. A
+     * losing concurrent attempt rolls back this transaction entirely (no
+     * currentVersionId update survives), so the caller can safely reload and
+     * decide how to respond rather than being left with partial state.
+     */
+    @Transactional
+    public FileVersion createNextVersion(FileEntity file, MaterializeVersionRequest request) {
+        int nextVersionNumber = fileVersionRepository.findTopByFileIdOrderByVersionNumberDesc(file.getId())
+                .map(v -> v.getVersionNumber() + 1)
+                .orElse(1);
+
+        FileVersion version = FileVersion.builder()
+                .fileId(file.getId())
+                .versionNumber(nextVersionNumber)
+                .objectKey(request.objectKey())
+                .sizeBytes(request.sizeBytes())
+                .checksum(request.checksum())
+                .etag(request.etag())
+                .createdBy(file.getOwnerId())
+                .sourceUploadId(request.sourceUploadId())
+                .build();
         version = fileVersionRepository.saveAndFlush(version);
 
         file.setCurrentVersionId(version.getId());

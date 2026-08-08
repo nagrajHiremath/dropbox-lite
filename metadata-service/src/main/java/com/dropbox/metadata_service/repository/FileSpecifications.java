@@ -28,4 +28,12 @@ public final class FileSpecifications {
     public static Specification<FileEntity> mimeTypeStartsWith(String prefix) {
         return (root, query, cb) -> cb.like(root.get("mimeType"), prefix + "%");
     }
+
+    public static Specification<FileEntity> hasName(String name) {
+        return (root, query, cb) -> cb.equal(root.get("name"), name);
+    }
+
+    public static Specification<FileEntity> idNot(UUID id) {
+        return (root, query, cb) -> cb.notEqual(root.get("id"), id);
+    }
 }

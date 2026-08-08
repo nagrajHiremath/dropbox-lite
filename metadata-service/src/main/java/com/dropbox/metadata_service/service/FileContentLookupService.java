@@ -40,4 +40,25 @@ public class FileContentLookupService {
 
         return new FileContentInfoResponse(file.getName(), file.getMimeType(), version.getObjectKey(), version.getSizeBytes());
     }
+
+    /**
+     * VER-03: resolves an arbitrary (not necessarily current) version's storage
+     * reference, for GET /files/{fileId}/versions/{versionId}/content. Mirrors
+     * resolveCurrentVersion's DELETED-file exclusion; TRASHED files are still
+     * resolvable, same as current-version downloads already allow.
+     */
+    @Transactional(readOnly = true)
+    public FileContentInfoResponse resolveVersion(UUID ownerId, UUID fileId, UUID versionId) {
+        FileEntity file = fileRepository.findByIdAndOwnerId(fileId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+
+        if (file.getStatus() == FileStatus.DELETED) {
+            throw new ResourceNotFoundException("File not found");
+        }
+
+        FileVersion version = fileVersionRepository.findByIdAndFileId(versionId, fileId)
+                .orElseThrow(() -> new ResourceNotFoundException("Version not found"));
+
+        return new FileContentInfoResponse(file.getName(), file.getMimeType(), version.getObjectKey(), version.getSizeBytes());
+    }
 }
