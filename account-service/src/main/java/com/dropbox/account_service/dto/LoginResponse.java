@@ -7,6 +7,7 @@ public record LoginResponse(
         String tokenType,
         long expiresInMs,
         UUID userId,
-        String email
+        String email,
+        String refreshToken
 ) {
 }

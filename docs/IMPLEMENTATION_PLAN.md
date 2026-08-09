@@ -289,6 +289,8 @@ POST /api/v1/auth/login
 - JWT validation works
 - Tests
 
+**Refresh token added** (pre-UI backend gap-fill, account-service only): new `refresh_tokens` table (`RefreshToken`/`RefreshTokenRepository`) and a new `RefreshTokenService` that owns creation/validation/rotation, reusing metadata-service `ShareService`'s exact raw-token/SHA-256-hash-only-stored pattern - the raw token is returned to the client once, only its hash is persisted. `LoginResponse` gained a `refreshToken` field (backward compatible - additive) returned by both `/login` and the new `POST /api/v1/auth/refresh`. Rotation is single-use: each refresh revokes the token it was called with and issues a new pair; reusing an already-rotated or expired/garbage token returns a clean `401 INVALID_REFRESH_TOKEN`, never a 500. `jwt.refresh-expiration-ms` config added (default 30 days). No gateway code changes were needed - `/api/v1/auth/**` was already public in `JwtAuthenticationWebFilter` and already routed; live-verified the refresh call succeeds with **no** `Authorization` header, confirming the gateway truly treats it as public rather than assuming so from reading the prefix list. upload/metadata/download/async-worker are untouched - they only ever see the gateway's `X-User-Id` header, never a JWT. No logout/revoke-all endpoint was added (not requested; TTL + single-use rotation is the accepted MVP scope).
+
 ---
 
 # 9. GWT-01 — Gateway Authentication ✅
@@ -909,6 +911,8 @@ POST /files/{fileId}/restore
 - File appears in Trash
 - Restore requires no re-upload
 
+**Extended to folders** (pre-UI backend gap-fill): `FolderStatus` gained `DELETED` alongside `ACTIVE`/`TRASHED`, mirroring `FileStatus`. `GET /api/v1/folders?status=trashed` now returns an account-wide trashed-folders listing (parentId-agnostic, same shape as the files trashed view), and `DELETE /api/v1/folders/{id}/permanent` was added (previously only `trashFolder`/`restoreFolder` existed, no permanent-delete at all). `trashFolder`/`restoreFolder` gained the same `DELETED`-guard `InvalidRequestException`s `FileService` already had. No cascade into child files/folders (folders never cascaded on trash either) and no new Kafka outbox event (folders have never emitted lifecycle events, unlike files) - both deliberately kept consistent with folders' existing, simpler behavior rather than extending it. Live-verified: create → trash → appears in `?status=trashed` → restore → drops out → trash again → permanent-delete (idempotent on repeat) → trash/restore against a `DELETED` folder both correctly rejected with 400.
+
 ---
 
 # 32. VER-01 — New Version Upload ✅
@@ -1366,7 +1370,7 @@ Priority:
 
 ---
 
-# 50. OBS-01 — Observability
+# 50. OBS-01 — Observability ✅
 
 Implement:
 
@@ -1381,6 +1385,10 @@ Implement:
 - DLT logging
 
 Do not spend large amounts of MVP time building a full observability platform.
+
+Reused api-gateway's existing `CorrelationIdWebFilter` (X-Request-Id, unchanged) as the entry point; added a matching `RequestIdFilter` (MDC "requestId") to account/upload/metadata/download-service and an outbound `ClientHttpRequestInterceptor` on each `@LoadBalanced RestClient.Builder` (upload/download/async-worker) to forward it - the same id now shows up in both sides of a synchronous call. Kafka consumers seed MDC "requestId"/"eventId" from the envelope's eventId for the async path, unifying HTTP and event-driven correlation without any `EventEnvelope` schema change. `uploadId`/`fileId` are set via MDC at the two central points that own them (`UploadCompletionService.complete`, `FileMaterializationService.materialize`/`materializeVersion`). All four surface uniformly via `logging.pattern.level: "%5p [rid=... uid=... fid=... eid=...]"` in each servlet-based service's `application.yaml` (Spring Boot's documented MDC extension point, no JSON-encoder dependency) - skipped on api-gateway since WebFlux's reactive thread-hopping breaks plain ThreadLocal MDC, so it keeps carrying the id via the header only, not logs. Both outbox publishers now log `aggregateId` (the uploadId/fileId) alongside the existing retry/give-up lines. Kafka consumer retry/DLT logging is new: both `KafkaConsumerConfig`s (metadata-service, async-worker) wrap `DeadLetterPublishingRecoverer` with a logging `ConsumerRecordRecoverer` and add `DefaultErrorHandler.setRetryListeners(...)`, each pulling `eventId` from the raw JSON payload and logging topic/partition/offset alongside it. `management.endpoint.health.probes.enabled` + explicit liveness/readiness state beans added to all 6 services (not discovery-service - no actuator dependency there, platform infra) - actuator was already on every classpath, so this is config-only, no new dependency.
+
+Live-verified end-to-end against real infra: `/actuator/health`, `/health/liveness`, `/health/readiness` all return 200 on all 6 services; a real request through the gateway showed the identical `X-Request-Id` echoed by both api-gateway and account-service; a full upload-initiate→part-upload→complete flow showed the same `rid` in both upload-service's and metadata-service's logs (proving the RestClient interceptor works) with `uid`/`fid` populated correctly at each step, plus the async `FILE_CREATED` path showing `eid` populated via the eventId-as-requestId unification; a crafted `UPLOAD_COMPLETED` event pointing at a nonexistent fileId, published directly to `storage.lifecycle.v1` via `kafka-console-producer`, produced exactly the expected 2s/10s/30s-spaced retry-attempt WARN logs followed by a DLT ERROR log (eventId/topic/partition/offset all present), and the record was confirmed present on `storage.lifecycle.v1.DLT` via `kafka-console-consumer`.
 
 ---
 

@@ -2,6 +2,7 @@ package com.dropbox.account_service.config;
 
 import com.dropbox.account_service.security.JwtAuthenticationFilter;
 import com.dropbox.account_service.security.JwtService;
+import com.dropbox.account_service.security.RequestIdFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -23,6 +24,7 @@ public class SecurityConfig {
 				.requestMatchers("/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 				.requestMatchers("/api/v1/auth/**").permitAll()
 				.anyRequest().authenticated())
+			.addFilterBefore(new RequestIdFilter(), UsernamePasswordAuthenticationFilter.class)
 			.addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}

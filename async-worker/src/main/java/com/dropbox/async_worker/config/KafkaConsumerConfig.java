@@ -1,5 +1,7 @@
 package com.dropbox.async_worker.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +12,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 
@@ -22,7 +25,12 @@ import java.util.Map;
  * MinIO error retries" / "Permanent failure reaches DLT") need the same
  * 2s/10s/30s backoff + DeadLetterPublishingRecoverer wiring - failures land
  * on file.lifecycle.v1.DLT, matching the documented DLT topic name.
+ *
+ * OBS-01: adds application-level WARN-per-retry and ERROR-on-DLT logging
+ * (Spring Kafka's own retry/DLT machinery only logs at DEBUG) - see
+ * metadata-service's KafkaConsumerConfig for the identical pattern.
  */
+@Slf4j
 @Configuration
 @EnableKafka
 public class KafkaConsumerConfig {
@@ -45,14 +53,34 @@ public class KafkaConsumerConfig {
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
-            ConsumerFactory<String, String> consumerFactory, KafkaTemplate<String, String> kafkaTemplate) {
+            ConsumerFactory<String, String> consumerFactory, KafkaTemplate<String, String> kafkaTemplate,
+            ObjectMapper objectMapper) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
 
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
-        DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, new FixedSequenceBackOff(2000L, 10_000L, 30_000L));
+        DeadLetterPublishingRecoverer dlt = new DeadLetterPublishingRecoverer(kafkaTemplate);
+        ConsumerRecordRecoverer loggingRecoverer = (record, ex) -> {
+            log.error("Sending to DLT: topic={} partition={} offset={} eventId={} reason={}",
+                    record.topic(), record.partition(), record.offset(),
+                    extractEventId((String) record.value(), objectMapper), ex.getMessage());
+            dlt.accept(record, ex);
+        };
+
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(loggingRecoverer, new FixedSequenceBackOff(2000L, 10_000L, 30_000L));
+        errorHandler.setRetryListeners((record, ex, deliveryAttempt) ->
+                log.warn("Retry attempt {} for topic={} partition={} offset={} eventId={}: {}",
+                        deliveryAttempt, record.topic(), record.partition(), record.offset(),
+                        extractEventId((String) record.value(), objectMapper), ex.getMessage()));
         factory.setCommonErrorHandler(errorHandler);
 
         return factory;
+    }
+
+    private static String extractEventId(String json, ObjectMapper objectMapper) {
+        try {
+            return objectMapper.readTree(json).path("eventId").asText("unknown");
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 }

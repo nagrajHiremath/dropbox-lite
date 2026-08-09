@@ -1,5 +1,6 @@
 package com.dropbox.async_worker.config;
 
+import org.slf4j.MDC;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +23,21 @@ public class RestClientConfig {
         return RestClient.builder();
     }
 
+    /**
+     * OBS-01: forwards the current Kafka event's id as X-Request-Id (see
+     * PermanentDeletionConsumer, which seeds MDC "requestId" = eventId for the
+     * duration of message processing) onto outbound calls to metadata-service/
+     * upload-service, so the whole async-triggered chain shares one correlating id.
+     */
     @Bean
     @LoadBalanced
     public RestClient.Builder loadBalancedRestClientBuilder() {
-        return RestClient.builder();
+        return RestClient.builder().requestInterceptor((request, body, execution) -> {
+            String requestId = MDC.get("requestId");
+            if (requestId != null) {
+                request.getHeaders().add("X-Request-Id", requestId);
+            }
+            return execution.execute(request, body);
+        });
     }
 }

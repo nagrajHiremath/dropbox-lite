@@ -19,6 +19,8 @@ import io.minio.ComposeObjectArgs;
 import io.minio.ComposeSource;
 import io.minio.MinioClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -63,6 +65,7 @@ import java.util.UUID;
  * proceeding uncoordinated; if another request already holds the lock, this
  * one is rejected (UploadLockedException) for the caller to retry shortly.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UploadCompletionService {
@@ -87,12 +90,22 @@ public class UploadCompletionService {
     private long lockTtlSeconds;
 
     public CompleteUploadResponse complete(UUID ownerId, UUID uploadId) {
-        String lockKey = LOCK_KEY_PREFIX + uploadId;
-        String lockToken = acquireLockOrFail(lockKey);
+        MDC.put("uploadId", uploadId.toString());
         try {
-            return doComplete(ownerId, uploadId);
+            String lockKey = LOCK_KEY_PREFIX + uploadId;
+            String lockToken = acquireLockOrFail(lockKey);
+            log.info("Completing upload");
+            try {
+                CompleteUploadResponse response = doComplete(ownerId, uploadId);
+                MDC.put("fileId", response.fileId().toString());
+                log.info("Upload completed, status={}", response.status());
+                return response;
+            } finally {
+                lockService.release(lockKey, lockToken);
+            }
         } finally {
-            lockService.release(lockKey, lockToken);
+            MDC.remove("uploadId");
+            MDC.remove("fileId");
         }
     }
 

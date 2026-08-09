@@ -35,4 +35,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ErrorResponse("INVALID_CREDENTIALS", ex.getMessage(), Instant.now(), null));
     }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorResponse("INVALID_REFRESH_TOKEN", ex.getMessage(), Instant.now(), null));
+    }
 }

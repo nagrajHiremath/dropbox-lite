@@ -53,6 +53,8 @@ public class OutboxPublisher {
             event.setStatus(OutboxEventStatus.PUBLISHED);
             event.setPublishedAt(Instant.now());
             outboxEventRepository.save(event);
+            log.debug("Published outbox event {} ({}) for aggregate {} to {}",
+                    event.getId(), event.getEventType(), event.getAggregateId(), TOPIC);
         } catch (Exception e) {
             handleFailure(event, e);
         }
@@ -63,11 +65,11 @@ public class OutboxPublisher {
         event.setRetryCount(retryCount);
         if (retryCount >= MAX_RETRY_COUNT) {
             event.setStatus(OutboxEventStatus.FAILED);
-            log.error("Giving up publishing outbox event {} ({}) after {} attempts: {}",
-                    event.getId(), event.getEventType(), retryCount, e.getMessage());
+            log.error("Giving up publishing outbox event {} ({}) for aggregate {} after {} attempts: {}",
+                    event.getId(), event.getEventType(), event.getAggregateId(), retryCount, e.getMessage());
         } else {
-            log.warn("Failed to publish outbox event {} ({}), attempt {}/{}: {}",
-                    event.getId(), event.getEventType(), retryCount, MAX_RETRY_COUNT, e.getMessage());
+            log.warn("Failed to publish outbox event {} ({}) for aggregate {}, attempt {}/{}: {}",
+                    event.getId(), event.getEventType(), event.getAggregateId(), retryCount, MAX_RETRY_COUNT, e.getMessage());
         }
         outboxEventRepository.save(event);
     }

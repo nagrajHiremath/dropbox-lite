@@ -48,12 +48,21 @@ public class FolderController {
     /**
      * Omitting parentId lists root-level folders. Mirrors GET /files?folderId=,
      * since the documented API has no other way to reach the root of the tree.
+     *
+     * status=trashed mirrors GET /files?status=trashed: an account-wide trash
+     * view that ignores parentId entirely, rather than a per-folder listing.
      */
     @GetMapping
     public ResponseEntity<PageResponse<FolderResponse>> listByParent(@AuthenticationPrincipal UUID ownerId,
                                                                        @RequestParam(required = false) UUID parentId,
+                                                                       @RequestParam(required = false) String status,
                                                                        @RequestParam(defaultValue = "0") int page,
                                                                        @RequestParam(defaultValue = "20") int size) {
+        if ("trashed".equalsIgnoreCase(status)) {
+            Page<Folder> trashed = folderService.listTrashed(ownerId, page, size);
+            return ResponseEntity.ok(PageResponse.from(trashed, FolderResponse::from));
+        }
+
         if (parentId != null) {
             folderService.getFolder(ownerId, parentId);
         }
@@ -91,5 +100,12 @@ public class FolderController {
                                                           @PathVariable UUID id) {
         Folder folder = folderService.restoreFolder(ownerId, id);
         return ResponseEntity.ok(FolderResponse.from(folder));
+    }
+
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<Void> permanentlyDeleteFolder(@AuthenticationPrincipal UUID ownerId,
+                                                          @PathVariable UUID id) {
+        folderService.permanentlyDeleteFolder(ownerId, id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -16,6 +16,8 @@ import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ import java.util.UUID;
  * crashed between this call succeeding and it recording that fact) replays the
  * same result instead of creating a second file/version.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FileMaterializationService {
@@ -49,31 +52,39 @@ public class FileMaterializationService {
     private long lockTtlSeconds;
 
     public MaterializeFileResponse materialize(UUID ownerId, MaterializeFileRequest request) {
-        Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
-        if (existing.isPresent()) {
-            return toResponse(existing.get());
-        }
-
-        if (request.folderId() != null) {
-            Folder folder = folderRepository.findByIdAndOwnerId(request.folderId(), ownerId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Folder not found"));
-            if (folder.getStatus() != FolderStatus.ACTIVE) {
-                throw new InvalidRequestException("Folder is not active");
-            }
-        }
-
-        FileVersion version;
         try {
-            version = materializer.createFileAndVersion(ownerId, request);
-        } catch (DataIntegrityViolationException e) {
-            // The atomic create rolled back entirely (FileEntity included - see
-            // FileVersionMaterializer), so no orphan was left behind. A concurrent
-            // request already committed the real version; reload and replay it.
-            version = fileVersionRepository.findBySourceUploadId(request.sourceUploadId())
-                    .orElseThrow(() -> e);
-        }
+            Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
+            if (existing.isPresent()) {
+                MDC.put("fileId", existing.get().getFileId().toString());
+                log.debug("materialize: replaying already-materialized version for sourceUploadId {}", request.sourceUploadId());
+                return toResponse(existing.get());
+            }
 
-        return toResponse(version);
+            if (request.folderId() != null) {
+                Folder folder = folderRepository.findByIdAndOwnerId(request.folderId(), ownerId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Folder not found"));
+                if (folder.getStatus() != FolderStatus.ACTIVE) {
+                    throw new InvalidRequestException("Folder is not active");
+                }
+            }
+
+            FileVersion version;
+            try {
+                version = materializer.createFileAndVersion(ownerId, request);
+            } catch (DataIntegrityViolationException e) {
+                // The atomic create rolled back entirely (FileEntity included - see
+                // FileVersionMaterializer), so no orphan was left behind. A concurrent
+                // request already committed the real version; reload and replay it.
+                version = fileVersionRepository.findBySourceUploadId(request.sourceUploadId())
+                        .orElseThrow(() -> e);
+            }
+
+            MDC.put("fileId", version.getFileId().toString());
+            log.info("materialize: created new file/version for sourceUploadId {}", request.sourceUploadId());
+            return toResponse(version);
+        } finally {
+            MDC.remove("fileId");
+        }
     }
 
     /**
@@ -93,12 +104,17 @@ public class FileMaterializationService {
      * unreachable, the request fails cleanly rather than proceeding uncoordinated.
      */
     public MaterializeFileResponse materializeVersion(UUID ownerId, MaterializeVersionRequest request) {
-        String lockKey = LOCK_KEY_PREFIX + request.fileId();
-        String lockToken = acquireLockOrFail(lockKey);
+        MDC.put("fileId", request.fileId().toString());
         try {
-            return doMaterializeVersion(ownerId, request);
+            String lockKey = LOCK_KEY_PREFIX + request.fileId();
+            String lockToken = acquireLockOrFail(lockKey);
+            try {
+                return doMaterializeVersion(ownerId, request);
+            } finally {
+                lockService.release(lockKey, lockToken);
+            }
         } finally {
-            lockService.release(lockKey, lockToken);
+            MDC.remove("fileId");
         }
     }
 
@@ -117,6 +133,7 @@ public class FileMaterializationService {
     private MaterializeFileResponse doMaterializeVersion(UUID ownerId, MaterializeVersionRequest request) {
         Optional<FileVersion> existing = fileVersionRepository.findBySourceUploadId(request.sourceUploadId());
         if (existing.isPresent()) {
+            log.debug("materializeVersion: replaying already-materialized version for sourceUploadId {}", request.sourceUploadId());
             return toResponse(existing.get());
         }
 
@@ -128,6 +145,7 @@ public class FileMaterializationService {
 
         try {
             FileVersion version = materializer.createNextVersion(file, request);
+            log.info("materializeVersion: created new version {} for sourceUploadId {}", version.getVersionNumber(), request.sourceUploadId());
             return toResponse(version);
         } catch (DataIntegrityViolationException e) {
             return fileVersionRepository.findBySourceUploadId(request.sourceUploadId())

@@ -1,6 +1,7 @@
 package com.dropbox.download_service.config;
 
 import com.dropbox.download_service.security.CurrentUserHeaderFilter;
+import com.dropbox.download_service.security.RequestIdFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -31,6 +32,7 @@ public class SecurityConfig {
 				.requestMatchers("/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 				.requestMatchers("/api/v1/public/**").permitAll()
 				.anyRequest().authenticated())
+			.addFilterBefore(new RequestIdFilter(), UsernamePasswordAuthenticationFilter.class)
 			.addFilterBefore(new CurrentUserHeaderFilter(securityContextRepository), UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}

@@ -1,5 +1,6 @@
 package com.dropbox.upload_service.config;
 
+import org.slf4j.MDC;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,9 +25,20 @@ public class RestClientConfig {
         return RestClient.builder();
     }
 
+    /**
+     * OBS-01: forwards the current request's X-Request-Id (see RequestIdFilter)
+     * onto outbound calls to metadata-service, so a single caller request is
+     * traceable across both services' logs via the same id.
+     */
     @Bean
     @LoadBalanced
     public RestClient.Builder loadBalancedRestClientBuilder() {
-        return RestClient.builder();
+        return RestClient.builder().requestInterceptor((request, body, execution) -> {
+            String requestId = MDC.get("requestId");
+            if (requestId != null) {
+                request.getHeaders().add("X-Request-Id", requestId);
+            }
+            return execution.execute(request, body);
+        });
     }
 }

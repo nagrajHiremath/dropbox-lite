@@ -2,6 +2,7 @@ package com.dropbox.account_service.controller;
 
 import com.dropbox.account_service.dto.LoginRequest;
 import com.dropbox.account_service.dto.LoginResponse;
+import com.dropbox.account_service.dto.RefreshTokenRequest;
 import com.dropbox.account_service.dto.RegisterRequest;
 import com.dropbox.account_service.dto.RegisterResponse;
 import com.dropbox.account_service.service.AuthenticationService;
@@ -32,6 +33,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authenticationService.login(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        LoginResponse response = authenticationService.refresh(request);
         return ResponseEntity.ok(response);
     }
 }

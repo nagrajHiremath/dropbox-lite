@@ -13,6 +13,7 @@ import io.minio.messages.DeleteError;
 import io.minio.messages.DeleteObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -60,14 +61,23 @@ public class PermanentDeletionConsumer {
             return;
         }
 
-        UUID fileId = envelope.aggregateId();
-        List<String> objectKeys = metadataServiceClient.getVersionObjectKeys(envelope.userId(), fileId);
-        if (objectKeys.isEmpty()) {
-            log.info("No MinIO objects to clean up for permanently-deleted file {}", fileId);
-            return;
-        }
+        MDC.put("eventId", envelope.eventId().toString());
+        MDC.put("requestId", envelope.eventId().toString());
+        try {
+            UUID fileId = envelope.aggregateId();
+            MDC.put("fileId", fileId.toString());
+            List<String> objectKeys = metadataServiceClient.getVersionObjectKeys(envelope.userId(), fileId);
+            if (objectKeys.isEmpty()) {
+                log.info("No MinIO objects to clean up for permanently-deleted file {}", fileId);
+                return;
+            }
 
-        deleteObjects(fileId, objectKeys);
+            deleteObjects(fileId, objectKeys);
+        } finally {
+            MDC.remove("eventId");
+            MDC.remove("requestId");
+            MDC.remove("fileId");
+        }
     }
 
     private void deleteObjects(UUID fileId, List<String> objectKeys) throws Exception {

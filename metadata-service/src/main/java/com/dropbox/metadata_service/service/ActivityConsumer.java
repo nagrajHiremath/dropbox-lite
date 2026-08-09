@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -44,14 +45,22 @@ public class ActivityConsumer {
             return;
         }
 
-        if (processedEventRepository.existsByEventIdAndConsumerName(envelope.eventId(), CONSUMER_NAME)) {
-            log.debug("Skipping already-recorded activity for event {}", envelope.eventId());
-            return;
-        }
+        MDC.put("eventId", envelope.eventId().toString());
+        MDC.put("requestId", envelope.eventId().toString());
+        try {
+            if (processedEventRepository.existsByEventIdAndConsumerName(envelope.eventId(), CONSUMER_NAME)) {
+                log.debug("Skipping already-recorded activity for event {}", envelope.eventId());
+                return;
+            }
 
-        String metadataJson = envelope.data() != null ? envelope.data().toString() : null;
-        activityWriter.recordActivity(envelope.eventId(), envelope.userId(), envelope.aggregateId(),
-                envelope.eventType(), metadataJson);
+            String metadataJson = envelope.data() != null ? envelope.data().toString() : null;
+            activityWriter.recordActivity(envelope.eventId(), envelope.userId(), envelope.aggregateId(),
+                    envelope.eventType(), metadataJson);
+            log.info("Recorded activity {} for aggregate {}", envelope.eventType(), envelope.aggregateId());
+        } finally {
+            MDC.remove("eventId");
+            MDC.remove("requestId");
+        }
     }
 
     private EventEnvelope<JsonNode> parse(String message) throws JsonProcessingException {

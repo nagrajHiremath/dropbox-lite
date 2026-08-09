@@ -138,6 +138,9 @@ public class FolderService {
         if (folder.getStatus() == FolderStatus.TRASHED) {
             return;
         }
+        if (folder.getStatus() == FolderStatus.DELETED) {
+            throw new InvalidRequestException("Folder has been permanently deleted");
+        }
 
         folder.setStatus(FolderStatus.TRASHED);
         folder.setDeletedAt(Instant.now());
@@ -154,6 +157,9 @@ public class FolderService {
         if (folder.getStatus() == FolderStatus.ACTIVE) {
             return folder;
         }
+        if (folder.getStatus() == FolderStatus.DELETED) {
+            throw new InvalidRequestException("Folder has been permanently deleted and cannot be restored");
+        }
 
         assertNameAvailable(ownerId, folder.getParentId(), folder.getName(), folderId);
 
@@ -164,6 +170,48 @@ public class FolderService {
         evictChildrenCache(ownerId, folder.getParentId());
 
         return folder;
+    }
+
+    /**
+     * Trash view: account-wide, like FileService.listFiles' status=trashed
+     * path - drops the parent/hierarchy scope entirely rather than listing
+     * per-folder, matching how trashed items are surfaced flat regardless of
+     * where they originally lived. Uncached, mirroring FileService.listFiles
+     * (only getFile/listChildren-active are cached today).
+     */
+    @Transactional(readOnly = true)
+    public Page<Folder> listTrashed(UUID ownerId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, cappedSize(size), Sort.by("name").ascending());
+        Specification<Folder> spec = Specification.allOf(
+                FolderSpecifications.ownedBy(ownerId),
+                FolderSpecifications.hasStatus(FolderStatus.TRASHED)
+        );
+        return folderRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * Mirrors FileService.permanentlyDeleteFile: idempotent no-op if already
+     * DELETED, preserves the original trashedAt if one is already set. No
+     * cascade into children (trashFolder doesn't cascade either - this keeps
+     * the same shallow behavior) and no outbox event (folders have never
+     * emitted lifecycle events, unlike files).
+     */
+    @Transactional
+    public void permanentlyDeleteFolder(UUID ownerId, UUID folderId) {
+        Folder folder = folderRepository.findByIdAndOwnerId(folderId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Folder not found"));
+
+        if (folder.getStatus() == FolderStatus.DELETED) {
+            return;
+        }
+
+        folder.setStatus(FolderStatus.DELETED);
+        if (folder.getDeletedAt() == null) {
+            folder.setDeletedAt(Instant.now());
+        }
+        folderRepository.save(folder);
+
+        evictChildrenCache(ownerId, folder.getParentId());
     }
 
     private Folder requireActiveOwnedFolder(UUID ownerId, UUID folderId) {

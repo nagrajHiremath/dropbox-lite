@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -70,19 +71,27 @@ public class UploadCompletedEventConsumer {
             return;
         }
 
-        if (processedEventRepository.existsByEventIdAndConsumerName(envelope.eventId(), CONSUMER_NAME)) {
-            log.debug("Skipping already-processed event {}", envelope.eventId());
-            return;
+        MDC.put("eventId", envelope.eventId().toString());
+        MDC.put("requestId", envelope.eventId().toString());
+        try {
+            if (processedEventRepository.existsByEventIdAndConsumerName(envelope.eventId(), CONSUMER_NAME)) {
+                log.debug("Skipping already-processed event {}", envelope.eventId());
+                return;
+            }
+
+            UploadCompletedEventData data = envelope.data();
+            boolean isNewFile = !UPLOAD_TYPE_NEW_VERSION.equals(data.uploadType());
+
+            MaterializeFileResponse materialized = isNewFile
+                    ? fileMaterializationService.materialize(envelope.userId(), toFileRequest(envelope, data))
+                    : fileMaterializationService.materializeVersion(envelope.userId(), toVersionRequest(envelope, data));
+
+            bookkeepingWriter.recordProcessed(envelope.eventId(), CONSUMER_NAME, envelope.userId(), materialized, isNewFile);
+            log.info("Processed UPLOAD_COMPLETED event, isNewFile={}", isNewFile);
+        } finally {
+            MDC.remove("eventId");
+            MDC.remove("requestId");
         }
-
-        UploadCompletedEventData data = envelope.data();
-        boolean isNewFile = !UPLOAD_TYPE_NEW_VERSION.equals(data.uploadType());
-
-        MaterializeFileResponse materialized = isNewFile
-                ? fileMaterializationService.materialize(envelope.userId(), toFileRequest(envelope, data))
-                : fileMaterializationService.materializeVersion(envelope.userId(), toVersionRequest(envelope, data));
-
-        bookkeepingWriter.recordProcessed(envelope.eventId(), CONSUMER_NAME, envelope.userId(), materialized, isNewFile);
     }
 
     private EventEnvelope<UploadCompletedEventData> parse(String message) throws JsonProcessingException {

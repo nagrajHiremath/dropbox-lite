@@ -39,3 +39,24 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [rid=%X{requestId:-} uid=%X{uploadId:-} fid=%X{fileId:-} eid=%X{eventId:-}]"
+
+# OBS-01: minimal actuator surface for k8s probes - no detail leakage (default
+# show-details: never), no new dependency (actuator already on the classpath).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

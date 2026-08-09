@@ -101,3 +101,24 @@ eureka:
 
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}
+
+# OBS-01: minimal actuator surface for k8s probes - no detail leakage (default
+# show-details: never), no new dependency (actuator already on the classpath).
+# No logging.pattern.level/MDC here - WebFlux's reactive thread-hopping means
+# ThreadLocal-based MDC doesn't reliably propagate through the chain; bridging
+# Reactor Context<->MDC is out of scope for MVP (see CorrelationIdWebFilter,
+# which already carries the id via the header itself, not MDC).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
