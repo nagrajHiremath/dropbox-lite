@@ -4,6 +4,7 @@ import com.dropbox.metadata_service.domain.FileEntity;
 import com.dropbox.metadata_service.domain.FileStatus;
 import com.dropbox.metadata_service.domain.FileVersion;
 import com.dropbox.metadata_service.dto.FileContentInfoResponse;
+import com.dropbox.metadata_service.dto.FileVersionObjectKeysResponse;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -60,5 +62,24 @@ public class FileContentLookupService {
                 .orElseThrow(() -> new ResourceNotFoundException("Version not found"));
 
         return new FileContentInfoResponse(file.getName(), file.getMimeType(), version.getObjectKey(), version.getSizeBytes());
+    }
+
+    /**
+     * WRK-02: all version object keys for a file, for post-permanent-deletion
+     * MinIO cleanup. Deliberately no status filter (unlike resolveCurrentVersion/
+     * resolveVersion above) - by the time this is called the file is normally
+     * already DELETED, and its versions must still be discoverable so their
+     * bytes can be cleaned up.
+     */
+    @Transactional(readOnly = true)
+    public FileVersionObjectKeysResponse resolveAllVersionObjectKeys(UUID ownerId, UUID fileId) {
+        fileRepository.findByIdAndOwnerId(fileId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("File not found"));
+
+        List<String> objectKeys = fileVersionRepository.findByFileId(fileId).stream()
+                .map(FileVersion::getObjectKey)
+                .toList();
+
+        return new FileVersionObjectKeysResponse(objectKeys);
     }
 }

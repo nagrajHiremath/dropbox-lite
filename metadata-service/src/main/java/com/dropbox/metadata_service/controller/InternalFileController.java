@@ -1,6 +1,7 @@
 package com.dropbox.metadata_service.controller;
 
 import com.dropbox.metadata_service.dto.FileContentInfoResponse;
+import com.dropbox.metadata_service.dto.FileVersionObjectKeysResponse;
 import com.dropbox.metadata_service.dto.MaterializeFileRequest;
 import com.dropbox.metadata_service.dto.MaterializeFileResponse;
 import com.dropbox.metadata_service.dto.MaterializeVersionRequest;
@@ -61,6 +62,13 @@ public class InternalFileController {
                                                              @PathVariable UUID fileId,
                                                              @PathVariable UUID versionId) {
         FileContentInfoResponse response = fileContentLookupService.resolveVersion(ownerId, fileId, versionId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{fileId}/versions")
+    public ResponseEntity<FileVersionObjectKeysResponse> allVersionObjectKeys(@AuthenticationPrincipal UUID ownerId,
+                                                                                @PathVariable UUID fileId) {
+        FileVersionObjectKeysResponse response = fileContentLookupService.resolveAllVersionObjectKeys(ownerId, fileId);
         return ResponseEntity.ok(response);
     }
 }

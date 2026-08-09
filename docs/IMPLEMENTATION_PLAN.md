@@ -1251,7 +1251,7 @@ Wired onto `UploadCompletedEventConsumer`'s container (`KafkaConsumerConfig`) vi
 
 ---
 
-# 45. WRK-01 — Activity Consumer
+# 45. WRK-01 — Activity Consumer ✅
 
 Consume useful lifecycle/activity events.
 
@@ -1267,9 +1267,11 @@ activities
 - Async
 - Activity failure does not fail primary file operation
 
+**Service placement note:** TECHNICAL_DESIGN.md §6.6 lists "Activity processing" under Async Worker, but `activities` is a metadata_db table (§14, owned by metadata-service per META-01) and §8 forbids cross-service table access - `async-worker` has no database at all, by design. Implemented instead as a second `@KafkaListener` inside metadata-service (`ActivityConsumer`, consumer group `metadata-service-activity`, alongside EVT-02/EVT-03's existing listener), consuming `file.lifecycle.v1`. Reuses the existing `processed_events` table for idempotency (a distinct `consumer_name`) and the existing `kafkaListenerContainerFactory` bean for retry/DLT, so no new infrastructure was needed - same principle already used for UPL-08's "Expired upload cleanup" placement.
+
 ---
 
-# 46. WRK-02 — Permanent Storage Cleanup
+# 46. WRK-02 — Permanent Storage Cleanup ✅
 
 Consume permanent deletion workflow.
 
@@ -1285,6 +1287,8 @@ all MinIO objects belonging to file versions
 - Permanent failure reaches DLT
 - Cleanup status observable
 - Duplicate delete request safe
+
+Implemented in `async-worker` (`PermanentDeletionConsumer`, matching §6.6 literally this time) - unlike WRK-01, this needs no service's database: just MinIO access (added `MinioConfig`/the `minio` dependency, mirroring upload-service's) plus one new internal read-only call to metadata-service (`GET /api/v1/internal/files/{fileId}/versions`, returning all version object keys regardless of file status, since by the time this runs the file is already DELETED) for the object keys to delete. Retry/DLT wiring mirrors EVT-03 exactly (own `FixedSequenceBackOff` + `DeadLetterPublishingRecoverer`, landing on `file.lifecycle.v1.DLT`). "Duplicate delete safe" comes free from MinIO's own `removeObjects` idempotency (same property `UploadTempPartsCleaner` already relies on); "cleanup status observable" is structured logging + the DLT topic itself - no new status table, keeping `async-worker` deliberately stateless.
 
 ---
 

@@ -3,8 +3,6 @@ spring:
     name: async-worker
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: async-worker
 
 server:
   port: 8085
@@ -12,6 +10,12 @@ server:
 upload:
   expire-sweep:
     interval-ms: ${UPLOAD_EXPIRE_SWEEP_INTERVAL_MS:300000}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket: ${MINIO_BUCKET:dropbox-files}
 
 eureka:
   client:
