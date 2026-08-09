@@ -1090,7 +1090,7 @@ Add distributed-system maturity without breaking the product.
 
 ---
 
-# 40. EVT-01 — Event Contracts
+# 40. EVT-01 — Event Contracts ✅
 
 Implement the event envelope:
 
@@ -1108,9 +1108,11 @@ Do not create a giant shared business-domain library.
 
 Share only stable event-contract code if useful.
 
+`EventEnvelope<T>` implemented as a plain record, duplicated per service (upload-service producer, metadata-service consumer) - no shared library, matching this project's existing convention for every other cross-service DTO.
+
 ---
 
-# 41. OBX-01 — Upload Outbox
+# 41. OBX-01 — Upload Outbox ✅
 
 Upload completion should become:
 
@@ -1153,9 +1155,11 @@ storage.lifecycle.v1
 - Publisher retries
 - Duplicate publication tolerated
 
+**Decision:** implemented as a dual-write, not a full cutover - `UploadCompletionService`'s existing synchronous HTTP materialization call to metadata-service is unchanged (still returns `fileId`/`versionId` immediately), and the same completion step now *also* durably enqueues this outbox event as a safety net for EVT-02's async consumer. See EVT-02's note below for why.
+
 ---
 
-# 42. EVT-02 — Metadata Upload Consumer
+# 42. EVT-02 — Metadata Upload Consumer ✅
 
 Consume:
 
@@ -1190,9 +1194,16 @@ NO duplicate version
 
 Consumer crash/redelivery is safe.
 
+**Notes:**
+- Dual-write, not full cutover (see OBX-01): the synchronous HTTP materialization path is unchanged; this consumer calls the exact same `FileMaterializationService.materialize()`/`materializeVersion()` methods as a redundant safety net, normally a harmless no-op replay via `sourceUploadId` idempotency.
+- Deliberately split into two transactions rather than the diagram's one: `materialize()`/`materializeVersion()` run first unchanged (each already correctly self-contained via `FileVersionMaterializer`'s own `@Transactional` boundary, so a losing-race `DataIntegrityViolationException` only poisons that isolated transaction, not a broader one - the same Postgres "transaction aborted" trap `UploadCompletionService`/`UploadInitiationService` are already deliberately structured to avoid). A second small `@Transactional` step (`UploadEventBookkeepingWriter`) then inserts `processed_events` + this service's own `outbox_events` row. Still fully safe under redelivery: a crash between the two steps just makes `materialize()` replay idempotently on redelivery.
+- `outbox_events`/`processed_events` entities didn't exist in metadata-service before this task despite META-01 listing them - created now (`OutboxEvent`/`OutboxEventStatus` mirror upload-service's exactly; `ProcessedEvent` uses a true JPA `@IdClass` composite PK matching the documented schema literally).
+- The `outbox_events` rows this consumer writes (`FILE_CREATED`/`FILE_VERSION_CREATED`) are not yet published to `file.lifecycle.v1` - that's OBX-02, not implemented here. Custom retry/backoff/DLT beyond Spring Kafka's built-in defaults is EVT-03, also not implemented here.
+- Verified: both services boot cleanly against real Postgres/Redis/Kafka/MinIO (docker-compose) with no bean-wiring errors - metadata-service's consumer subscribes and gets partitions assigned on `storage.lifecycle.v1`.
+
 ---
 
-# 43. OBX-02 — Metadata Outbox
+# 43. OBX-02 — Metadata Outbox ✅
 
 Publish appropriate events:
 
@@ -1206,9 +1217,11 @@ FILE_SHARED
 SHARE_REVOKED
 ```
 
+`MetadataOutboxPublisher` mirrors upload-service's `OutboxPublisher` (OBX-01) exactly, publishing to `file.lifecycle.v1` keyed by `fileId`. `FILE_CREATED`/`FILE_VERSION_CREATED` were already enqueued by EVT-02; `FILE_TRASHED`/`FILE_RESTORED`/`FILE_PERMANENTLY_DELETED` (`FileService`) and `FILE_SHARED`/`SHARE_REVOKED` (`ShareService`) are newly wired via a shared `OutboxEventWriter`, called only on the actual-mutation path in each method (not the existing idempotent no-op-return paths). Since those methods are already fully `@Transactional` (unlike upload-service's per-step-checkpointed completion flow), the outbox write just joins the caller's ambient transaction - no `REQUIRES_NEW` bean needed here.
+
 ---
 
-# 44. EVT-03 — Retry + DLT
+# 44. EVT-03 — Retry + DLT ✅
 
 Implement bounded retry.
 
@@ -1233,6 +1246,8 @@ DLT
 - Original event identifiable
 - Error reason visible
 - One controlled demo failure works
+
+Wired onto `UploadCompletedEventConsumer`'s container (`KafkaConsumerConfig`) via a `DefaultErrorHandler` using a small custom `FixedSequenceBackOff` (exactly 2s/10s/30s, not Spring's multiplicative `ExponentialBackOff`) plus `DeadLetterPublishingRecoverer`, whose default behavior already publishes to `<original-topic>.DLT` (`storage.lifecycle.v1.DLT`, matching the documented topic name) with original-topic/partition/offset and exception-message/stacktrace headers, and republishes the untouched original record - "identifiable"/"error reason visible" come from Spring Kafka's built-in behavior, not custom code. Manual demo recipe: publish (or let a real upload produce) an `UPLOAD_COMPLETED` event whose `data.folderId` points at a non-existent folder - `FileMaterializationService.materialize()` throws `ResourceNotFoundException`, which exercises the retry→DLT path end to end (~42s until the message lands on `storage.lifecycle.v1.DLT`).
 
 ---
 

@@ -5,6 +5,7 @@ import com.dropbox.metadata_service.domain.FileStatus;
 import com.dropbox.metadata_service.domain.Folder;
 import com.dropbox.metadata_service.dto.MoveFileRequest;
 import com.dropbox.metadata_service.dto.UpdateFileRequest;
+import com.dropbox.metadata_service.event.FileLifecycleEventData;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.NameConflictException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
@@ -33,6 +34,7 @@ public class FileService {
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
+    private final OutboxEventWriter outboxEventWriter;
 
     @Transactional(readOnly = true)
     public FileEntity getFile(UUID ownerId, UUID fileId) {
@@ -111,6 +113,9 @@ public class FileService {
         file.setStatus(FileStatus.TRASHED);
         file.setDeletedAt(Instant.now());
         fileRepository.save(file);
+
+        outboxEventWriter.enqueue("FILE", fileId, "FILE_TRASHED", ownerId,
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
     }
 
     @Transactional
@@ -127,14 +132,18 @@ public class FileService {
 
         file.setStatus(FileStatus.ACTIVE);
         file.setDeletedAt(null);
-        return fileRepository.save(file);
+        file = fileRepository.save(file);
+
+        outboxEventWriter.enqueue("FILE", fileId, "FILE_RESTORED", ownerId,
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
+
+        return file;
     }
 
     /**
-     * Marks the file's metadata lifecycle as permanently deleted. Physical MinIO
-     * object cleanup is asynchronous (WRK-02) and not wired yet, since the
-     * Outbox/Kafka pipeline (OBX-02) is out of scope for the Metadata Service
-     * endpoints implemented here.
+     * Marks the file's metadata lifecycle as permanently deleted and enqueues
+     * FILE_PERMANENTLY_DELETED (OBX-02). Physical MinIO object cleanup is a
+     * separate async consumer of that event (WRK-02) and not implemented here.
      */
     @Transactional
     public void permanentlyDeleteFile(UUID ownerId, UUID fileId) {
@@ -150,6 +159,9 @@ public class FileService {
             file.setDeletedAt(Instant.now());
         }
         fileRepository.save(file);
+
+        outboxEventWriter.enqueue("FILE", fileId, "FILE_PERMANENTLY_DELETED", ownerId,
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
     }
 
     private void assertNameAvailable(UUID ownerId, UUID folderId, String name, UUID excludeFileId) {

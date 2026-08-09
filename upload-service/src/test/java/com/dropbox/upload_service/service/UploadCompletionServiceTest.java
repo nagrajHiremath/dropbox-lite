@@ -51,6 +51,8 @@ class UploadCompletionServiceTest {
     private UploadTempPartsCleaner tempPartsCleaner;
     @Mock
     private RedisLockService lockService;
+    @Mock
+    private UploadCompletionOutboxWriter outboxWriter;
 
     private UploadCompletionService service;
 
@@ -58,7 +60,7 @@ class UploadCompletionServiceTest {
     void setUp() {
         service = new UploadCompletionService(
                 uploadSessionRepository, uploadPartRepository, metadataServiceClient, minioClient, tempPartsCleaner,
-                lockService);
+                lockService, outboxWriter);
         ReflectionTestUtils.setField(service, "bucket", "dropbox-files");
         ReflectionTestUtils.setField(service, "lockTtlSeconds", 30L);
         when(lockService.tryAcquire(any(), any())).thenReturn(Optional.of("test-lock-token"));
@@ -126,6 +128,11 @@ class UploadCompletionServiceTest {
         when(uploadSessionRepository.findByIdAndUserId(uploadId, ownerId)).thenReturn(Optional.of(session));
         when(uploadPartRepository.findPartNumbersByUploadSessionId(uploadId)).thenReturn(List.of(1, 2));
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(outboxWriter.markStorageCompletedAndEnqueue(any(UploadSession.class))).thenAnswer(inv -> {
+            UploadSession s = inv.getArgument(0);
+            s.setStatus(UploadStatus.STORAGE_COMPLETED);
+            return s;
+        });
         when(metadataServiceClient.materializeFile(eq(ownerId), any(MaterializeFileRequest.class)))
                 .thenReturn(new MaterializeFileResponse(fileId, versionId, 1));
 
@@ -138,6 +145,7 @@ class UploadCompletionServiceTest {
         assertThat(session.getFileId()).isEqualTo(fileId);
 
         verify(minioClient, times(1)).composeObject(any());
+        verify(outboxWriter, times(1)).markStorageCompletedAndEnqueue(any());
         verify(tempPartsCleaner, times(1)).cleanup(any());
 
         ArgumentCaptor<MaterializeFileRequest> requestCaptor = ArgumentCaptor.forClass(MaterializeFileRequest.class);

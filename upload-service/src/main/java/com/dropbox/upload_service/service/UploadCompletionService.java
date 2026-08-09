@@ -37,8 +37,13 @@ import java.util.UUID;
  *
  * File/version materialization talks to Metadata Service directly and
  * synchronously - this is the "enough metadata behavior to prove the vertical
- * slice" connection UPL-05 explicitly calls for; the Kafka/Outbox path (EVT-02)
- * that supersedes it is Day 4 scope.
+ * slice" connection UPL-05 explicitly calls for. OBX-01/EVT-02 (Day 4) add a
+ * second, asynchronous path on top of this (not a replacement): the
+ * STORAGE_COMPLETED step below also durably enqueues an UPLOAD_COMPLETED
+ * outbox event, which Metadata Service's Kafka consumer picks up and
+ * materializes via the exact same idempotent logic this synchronous call
+ * uses. Normally that's a harmless no-op replay; it's a real safety net if
+ * Metadata Service was down when this synchronous call ran.
  *
  * Every step is idempotent/resumable from the session's current status, so a
  * repeated or retried call converges on the same result: already-COMPLETED
@@ -73,6 +78,7 @@ public class UploadCompletionService {
     private final MinioClient minioClient;
     private final UploadTempPartsCleaner tempPartsCleaner;
     private final RedisLockService lockService;
+    private final UploadCompletionOutboxWriter outboxWriter;
 
     @Value("${minio.bucket}")
     private String bucket;
@@ -124,8 +130,7 @@ public class UploadCompletionService {
 
             composeInMinio(session);
 
-            session.setStatus(UploadStatus.STORAGE_COMPLETED);
-            session = uploadSessionRepository.save(session);
+            session = outboxWriter.markStorageCompletedAndEnqueue(session);
 
             tempPartsCleaner.cleanup(session);
         }

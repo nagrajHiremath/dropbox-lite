@@ -7,6 +7,8 @@ import com.dropbox.metadata_service.domain.ShareLink;
 import com.dropbox.metadata_service.domain.ShareStatus;
 import com.dropbox.metadata_service.dto.CreateShareRequest;
 import com.dropbox.metadata_service.dto.FileContentInfoResponse;
+import com.dropbox.metadata_service.event.ShareEventData;
+import com.dropbox.metadata_service.event.ShareRevokedEventData;
 import com.dropbox.metadata_service.exception.ConflictException;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
@@ -39,6 +41,7 @@ public class ShareService {
     private final ShareLinkRepository shareLinkRepository;
     private final FileRepository fileRepository;
     private final FileVersionRepository fileVersionRepository;
+    private final OutboxEventWriter outboxEventWriter;
 
     @Transactional
     public RawShare createShare(UUID ownerId, UUID fileId, CreateShareRequest request) {
@@ -60,6 +63,8 @@ public class ShareService {
                     .build();
             try {
                 share = shareLinkRepository.save(share);
+                outboxEventWriter.enqueue("FILE", fileId, "FILE_SHARED", ownerId,
+                        new ShareEventData(share.getId(), fileId, share.getPermission(), share.getExpiresAt()));
                 return new RawShare(share, rawToken);
             } catch (DataIntegrityViolationException e) {
                 if (attempt == MAX_TOKEN_ATTEMPTS) {
@@ -91,6 +96,9 @@ public class ShareService {
 
         share.setStatus(ShareStatus.REVOKED);
         shareLinkRepository.save(share);
+
+        outboxEventWriter.enqueue("FILE", share.getFileId(), "SHARE_REVOKED", ownerId,
+                new ShareRevokedEventData(share.getId(), share.getFileId()));
     }
 
     @Transactional(readOnly = true)
