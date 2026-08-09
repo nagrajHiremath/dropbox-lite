@@ -10,7 +10,9 @@ import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import com.dropbox.metadata_service.repository.FolderSpecifications;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -18,7 +20,10 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,8 +32,13 @@ public class FolderService {
 
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_ANCESTOR_HOPS = 1000;
+    private static final String FOLDER_CHILDREN_KEY_PREFIX = "folder:children:";
 
     private final FolderRepository folderRepository;
+    private final RedisCacheService cacheService;
+
+    @Value("${metadata.cache.ttl-seconds:300}")
+    private long cacheTtlSeconds;
 
     @Transactional
     public Folder createFolder(UUID ownerId, CreateFolderRequest request) {
@@ -45,7 +55,9 @@ public class FolderService {
                 .status(FolderStatus.ACTIVE)
                 .build();
 
-        return folderRepository.save(folder);
+        folder = folderRepository.save(folder);
+        evictChildrenCache(ownerId, request.parentId());
+        return folder;
     }
 
     @Transactional(readOnly = true)
@@ -54,15 +66,34 @@ public class FolderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Folder not found"));
     }
 
+    /**
+     * RDS-01: cache-aside on folder:children:{userId}:{parentIdOrRoot}:{page}:{size}.
+     * userId is already part of the key, so unlike FileService.getFile there's
+     * no cross-owner leakage risk to guard against on a hit.
+     */
     @Transactional(readOnly = true)
     public Page<Folder> listChildren(UUID ownerId, UUID parentId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, cappedSize(size), Sort.by("name").ascending());
+        int cappedSize = cappedSize(size);
+        String cacheKey = childrenCacheKey(ownerId, parentId, page, cappedSize);
+
+        Optional<FolderChildrenPage> cached = cacheService.get(cacheKey, FolderChildrenPage.class);
+        if (cached.isPresent()) {
+            FolderChildrenPage c = cached.get();
+            return new PageImpl<>(c.content(), PageRequest.of(c.page(), c.size(), Sort.by("name").ascending()), c.totalElements());
+        }
+
+        Pageable pageable = PageRequest.of(page, cappedSize, Sort.by("name").ascending());
         Specification<Folder> spec = Specification.allOf(
                 FolderSpecifications.ownedBy(ownerId),
                 FolderSpecifications.hasParent(parentId),
                 FolderSpecifications.hasStatus(FolderStatus.ACTIVE)
         );
-        return folderRepository.findAll(spec, pageable);
+        Page<Folder> result = folderRepository.findAll(spec, pageable);
+
+        cacheService.put(cacheKey, new FolderChildrenPage(result.getContent(), page, cappedSize,
+                result.getTotalElements(), result.getTotalPages()), Duration.ofSeconds(cacheTtlSeconds));
+
+        return result;
     }
 
     @Transactional
@@ -72,7 +103,7 @@ public class FolderService {
         UUID targetParentId = request.parentId() != null ? request.parentId() : folder.getParentId();
         String targetName = request.name() != null ? request.name() : folder.getName();
 
-        boolean parentChanged = !java.util.Objects.equals(targetParentId, folder.getParentId());
+        boolean parentChanged = !Objects.equals(targetParentId, folder.getParentId());
         boolean nameChanged = !targetName.equals(folder.getName());
 
         if (parentChanged) {
@@ -86,9 +117,17 @@ public class FolderService {
             assertNameAvailable(ownerId, targetParentId, targetName, folderId);
         }
 
+        UUID previousParentId = folder.getParentId();
         folder.setParentId(targetParentId);
         folder.setName(targetName);
-        return folderRepository.save(folder);
+        folder = folderRepository.save(folder);
+
+        evictChildrenCache(ownerId, previousParentId);
+        if (parentChanged) {
+            evictChildrenCache(ownerId, targetParentId);
+        }
+
+        return folder;
     }
 
     @Transactional
@@ -103,6 +142,8 @@ public class FolderService {
         folder.setStatus(FolderStatus.TRASHED);
         folder.setDeletedAt(Instant.now());
         folderRepository.save(folder);
+
+        evictChildrenCache(ownerId, folder.getParentId());
     }
 
     @Transactional
@@ -118,7 +159,11 @@ public class FolderService {
 
         folder.setStatus(FolderStatus.ACTIVE);
         folder.setDeletedAt(null);
-        return folderRepository.save(folder);
+        folder = folderRepository.save(folder);
+
+        evictChildrenCache(ownerId, folder.getParentId());
+
+        return folder;
     }
 
     private Folder requireActiveOwnedFolder(UUID ownerId, UUID folderId) {
@@ -166,5 +211,17 @@ public class FolderService {
             return 20;
         }
         return Math.min(size, MAX_PAGE_SIZE);
+    }
+
+    private void evictChildrenCache(UUID ownerId, UUID parentId) {
+        cacheService.evictByPattern(FOLDER_CHILDREN_KEY_PREFIX + ownerId + ":" + parentKeySegment(parentId) + ":*");
+    }
+
+    private String childrenCacheKey(UUID ownerId, UUID parentId, int page, int size) {
+        return FOLDER_CHILDREN_KEY_PREFIX + ownerId + ":" + parentKeySegment(parentId) + ":" + page + ":" + size;
+    }
+
+    private static String parentKeySegment(UUID parentId) {
+        return parentId == null ? "root" : parentId.toString();
     }
 }

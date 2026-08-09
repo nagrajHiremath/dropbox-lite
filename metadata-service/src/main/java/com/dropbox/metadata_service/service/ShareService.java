@@ -16,6 +16,7 @@ import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.ShareLinkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +25,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -37,11 +40,16 @@ public class ShareService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int TOKEN_BYTES = 32;
     private static final int MAX_TOKEN_ATTEMPTS = 3;
+    private static final String SHARE_KEY_PREFIX = "share:";
 
     private final ShareLinkRepository shareLinkRepository;
     private final FileRepository fileRepository;
     private final FileVersionRepository fileVersionRepository;
     private final OutboxEventWriter outboxEventWriter;
+    private final RedisCacheService cacheService;
+
+    @Value("${metadata.cache.ttl-seconds:300}")
+    private long cacheTtlSeconds;
 
     @Transactional
     public RawShare createShare(UUID ownerId, UUID fileId, CreateShareRequest request) {
@@ -96,6 +104,7 @@ public class ShareService {
 
         share.setStatus(ShareStatus.REVOKED);
         shareLinkRepository.save(share);
+        cacheService.evict(SHARE_KEY_PREFIX + share.getTokenHash());
 
         outboxEventWriter.enqueue("FILE", share.getFileId(), "SHARE_REVOKED", ownerId,
                 new ShareRevokedEventData(share.getId(), share.getFileId()));
@@ -135,10 +144,23 @@ public class ShareService {
         return new FileContentInfoResponse(file.getName(), file.getMimeType(), version.getObjectKey(), version.getSizeBytes());
     }
 
+    /**
+     * RDS-02: cache-aside on share:{tokenHash}. The ACTIVE-status and expiry
+     * checks below run against the ShareLink regardless of whether it came
+     * from cache or DB - a cache hit never skips them, so "Expiry/status
+     * still checked" holds even when Redis serves the read.
+     */
     private ActiveShare resolveActiveShare(String rawToken) {
         String tokenHash = hashToken(rawToken);
-        ShareLink share = shareLinkRepository.findByTokenHash(tokenHash)
-                .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+        String cacheKey = SHARE_KEY_PREFIX + tokenHash;
+
+        Optional<ShareLink> cached = cacheService.get(cacheKey, ShareLink.class);
+        ShareLink share = cached.orElseGet(() -> {
+            ShareLink loaded = shareLinkRepository.findByTokenHash(tokenHash)
+                    .orElseThrow(() -> new ResourceNotFoundException("Share not found"));
+            cacheService.put(cacheKey, loaded, Duration.ofSeconds(cacheTtlSeconds));
+            return loaded;
+        });
 
         if (share.getStatus() != ShareStatus.ACTIVE) {
             throw new ResourceNotFoundException("Share not found");

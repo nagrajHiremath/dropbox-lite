@@ -1292,7 +1292,7 @@ Implemented in `async-worker` (`PermanentDeletionConsumer`, matching §6.6 liter
 
 ---
 
-# 47. RDS-01 — Metadata Cache
+# 47. RDS-01 — Metadata Cache ✅
 
 Prioritize:
 
@@ -1320,9 +1320,11 @@ Mutations invalidate affected cache.
 
 Redis outage falls back to DB.
 
+Implemented via a new explicit `RedisCacheService` (not Spring's `@Cacheable` - its default error handling would propagate a cache-store exception and fail the request, which conflicts with "Redis outage falls back to DB"; this wrapper swallows Redis failures and logs instead, same style as the existing `RedisLockService`). Caches `file:meta:{fileId}` (`FileService.getFile`, evicted on rename/move/trash/restore/permanent-delete) and `folder:children:{userId}:{parentId}:{page}:{size}` (`FolderService.listChildren`, pattern-evicted on create/rename-move/trash/restore). "folder children" was scoped to `FolderService.listChildren` (sub-folder listings, matching the doc's own example key) rather than `FileService.listFiles`, which has too many filter dimensions to cache cleanly. **Security note:** `file:meta:{fileId}` has no `userId` in the key (matching the doc's example), so a cache hit re-verifies `ownerId` against the cached entity before returning it - otherwise a hit could leak one owner's file metadata to a different caller requesting the same fileId. Versions/storage-usage caching deferred per the doc's own "if time permits" prioritization.
+
 ---
 
-# 48. RDS-02 — Share Cache
+# 48. RDS-02 — Share Cache ✅
 
 Cache:
 
@@ -1336,6 +1338,8 @@ share:{tokenHash}
 - Revoke immediately invalidates
 - Expiry/status still checked
 - DB remains authoritative
+
+Caches the `ShareLink` at `share:{tokenHash}` inside `ShareService.resolveActiveShare` (the shared helper both `resolvePublicShare` and `resolvePublicShareContent` already use). The ACTIVE-status and expiry checks run against whatever came back regardless of cache hit/miss, so a cache hit never skips them. `revokeShare` evicts the key immediately using the already-loaded `share.getTokenHash()`. Verified live end-to-end against real Postgres/Redis: cache populated on first public lookup, evicted immediately on revoke, and the next public lookup correctly 404s (hits DB fresh, sees REVOKED).
 
 ---
 

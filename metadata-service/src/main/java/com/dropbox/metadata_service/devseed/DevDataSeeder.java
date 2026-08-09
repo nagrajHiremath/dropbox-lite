@@ -40,7 +40,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DevDataSeeder implements CommandLineRunner {
 
-    public static final UUID TEST_USER_ID = UUID.fromString("fc6d2173-138f-491f-af96-8cbe8dd0baf2");
+    public static final UUID TEST_USER_ID = UUID.fromString("e449d7bb-f7ff-417e-bafb-a1e5a180e666");
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
