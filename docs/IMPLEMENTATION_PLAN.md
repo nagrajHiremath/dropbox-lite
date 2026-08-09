@@ -1343,7 +1343,7 @@ Caches the `ShareLink` at `share:{tokenHash}` inside `ShareService.resolveActive
 
 ---
 
-# 49. RDS-03 — Distributed Rate Limiting
+# 49. RDS-03 — Distributed Rate Limiting ✅
 
 Priority:
 
@@ -1359,6 +1359,10 @@ Priority:
 - Redis-backed atomic implementation
 - Returns `429`
 - `Retry-After` where practical
+
+**Implemented centrally at `api-gateway`**, not as a hand-rolled limiter duplicated across upload/download/metadata/account-service. Every one of the 5 priority targets is already a gateway route, and `api-gateway` already carried `spring-boot-starter-data-redis-reactive` as an unused dependency - a strong signal this was meant to use Spring Cloud Gateway's own built-in `RequestRateLimiter` filter + `RedisRateLimiter` (token bucket, atomic Lua script bundled with Gateway itself), which is exactly the "proven Redis-backed implementation" the doc allows as an alternative to a custom one. All 7 routes got a `RequestRateLimiter` filter added in `application.yaml` (predicates/uri/ordering untouched), keyed by a new `userKeyResolver` (reads the already-gateway-set `X-User-Id` header - upload/download/metadata) or `ipKeyResolver` (remote address - public share/auth, both pre-authentication). A new `RetryAfterHeaderFilter` global filter adds `Retry-After: 1` on `429`s via `response.beforeCommit(...)` - Gateway's bundled filter already sends `X-RateLimit-*` headers but not `Retry-After`.
+
+**Verified live end-to-end**: booted discovery-service + account-service + api-gateway against real Redis, burst-tested the auth route (`replenishRate=3`, `burstCapacity=5`) with 5 rapid requests succeeding and the 6th correctly rejected with `429`, `Retry-After: 1`, and full `X-RateLimit-*` headers; confirmed the underlying `request_rate_limiter.{routeId.key}.*` keys in Redis. Two real bugs were caught and fixed during this live testing (not by code review alone): a `NoUniqueBeanDefinitionException` from having two `KeyResolver` beans with no `@Primary` (Gateway's filter factory needs an unambiguous default even though every route here sets `key-resolver` explicitly), and a filter-ordering bug where the original `Retry-After` implementation (`chain.filter(exchange).then(...)`) never ran on a rejected request because `RequestRateLimiter` short-circuits without calling `chain.filter()` further - fixed by switching to `response.beforeCommit(...)`, which is ordering-independent.
 
 ---
 
