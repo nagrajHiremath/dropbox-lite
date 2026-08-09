@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
+import RequireAuth from '@/components/auth/RequireAuth'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import MyFilesPage from '@/pages/MyFilesPage'
@@ -17,14 +18,16 @@ export function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/s/:token" element={<PublicSharePage />} />
 
-      <Route element={<AppShell />}>
-        <Route path="/" element={<Navigate to="/files" replace />} />
-        <Route path="/files" element={<MyFilesPage />} />
-        <Route path="/files/:folderId" element={<MyFilesPage />} />
-        <Route path="/recent" element={<RecentPage />} />
-        <Route path="/photos" element={<PhotosPage />} />
-        <Route path="/videos" element={<VideosPage />} />
-        <Route path="/trash" element={<TrashPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<Navigate to="/files" replace />} />
+          <Route path="/files" element={<MyFilesPage />} />
+          <Route path="/files/:folderId" element={<MyFilesPage />} />
+          <Route path="/recent" element={<RecentPage />} />
+          <Route path="/photos" element={<PhotosPage />} />
+          <Route path="/videos" element={<VideosPage />} />
+          <Route path="/trash" element={<TrashPage />} />
+        </Route>
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

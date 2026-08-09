@@ -36,10 +36,10 @@ No state-management framework beyond the two above, no CSS-in-JS, no UI kit beyo
 
 These are not being silently worked around — flagging them for a decision before the phases that touch them.
 
-1. **Trashed folders cannot be listed.** `GET /api/v1/folders` / `.../children` are hardcoded to `FolderStatus.ACTIVE` (`FolderService.listChildren`, `FolderSpecifications.hasStatus(ACTIVE)`). Files have a working `status=trashed` filter (`GET /api/v1/files?status=trashed`); folders have no equivalent. **Impact:** the Trash view (UI-14) can show trashed files but not trashed folders in v1. Fixing this needs a small, symmetric backend addition (a `status` query param on `FolderController.listByParent`, mirroring `FileController`) — not a redesign, but it's a backend change and per CLAUDE.md I'm not making it without a go-ahead.
+1. ~~**Trashed folders cannot be listed.**~~ **Resolved.** `GET /api/v1/folders?status=trashed` now returns an account-wide trashed-folders listing and `DELETE /api/v1/folders/{id}/permanent` was added, mirroring the files trash lifecycle exactly (see `IMPLEMENTATION_PLAN.md` §31 META-06's implementation notes). UI-14 (Trash) can show both trashed files and trashed folders.
 2. **No activity-feed read endpoint.** `Activity`/`ActivityRepository`/`ActivityConsumer` exist in metadata-service but are write-only (populated by the Kafka consumer, no controller reads them). DROPBOX_UI.md doesn't ask for an activity/history screen explicitly, so this plan doesn't include one — noting it only so it's a conscious omission, not an oversight.
 3. **No sort control.** Every list endpoint has a hardcoded server-side sort (Folders → name asc, Files → updatedAt desc, Versions → versionNumber desc) with no client-supplied sort param. DROPBOX_UI.md asks for "clear column headers," not sortable ones — so v1 column headers are labels only, not click-to-sort controls. Flagging so nobody expects sort clicks to work against the live list.
-4. **No token refresh.** Login returns a 1-hour access token with no refresh endpoint. Mid-session expiry means a hard redirect to `/login` on the next 401, losing in-progress context. Acceptable for MVP; noting it as a deliberate limitation rather than solving it with a backend change that wasn't asked for.
+4. ~~**No token refresh.**~~ **Resolved.** account-service now issues a rotating refresh token alongside the access token (see `IMPLEMENTATION_PLAN.md` §8 ACC-02's implementation notes). UI-01's `api/client.ts` uses it: any `401` triggers one single-flight silent refresh-and-retry before falling back to a hard redirect to `/login` — mid-session expiry no longer loses context in the common case.
 
 ---
 
@@ -144,8 +144,8 @@ Mirrors the backend's task-ID convention so we can implement one at a time the s
 **Phase 0 — Scaffold**
 - `UI-00` Vite + React + TS + Tailwind + shadcn/ui + Router + Query + Zustand scaffold, env config (`VITE_API_BASE_URL`), lint/format setup, base `AppShell` with empty Sidebar/TopBar.
 
-**Phase 1 — Auth**
-- `UI-01` Login/Register pages, auth store, token persistence, protected-route guard, global 401 handling.
+**Phase 1 — Auth** ✅
+- `UI-01` Login/Register pages, auth store, token persistence, protected-route guard, global 401 handling. Implemented: `store/authStore.ts` (Zustand + `persist` → localStorage, holds access+refresh tokens), `api/client.ts` (attaches `Authorization`, normalizes error bodies into `ApiError{status,code,message,fieldErrors}`, single-flight refresh-on-401-then-retry-once, hard-redirects to `/login` only if refresh itself fails), `api/auth.ts` (typed `login`/`register`), real Login/Register forms (client-side validation matching backend `@Size`/`@Email` constraints, inline error display, register→login handoff via a success toast), `components/auth/RequireAuth.tsx` guarding the `AppShell` route group and preserving the originally-requested location for post-login redirect. Verified: type-check/build/lint/format clean; live-verified wire compatibility against the real backend (register/login/refresh/401 payload shapes byte-for-byte match `api/auth.ts`'s types) and that the dev server serves `/login`/`/register`/`/files` correctly. **Not verified**: actual interactive browser use (clicking through the forms) — no browser automation tool is available in this environment; recommend a quick manual click-through before moving on.
 
 **Phase 2 — Shell & Navigation**
 - `UI-02` Sidebar (My Files/Recent/Photos/Videos/Trash, active-section indicator), Breadcrumbs component, route skeleton for all screens, shared Empty/Error/Skeleton primitives.
