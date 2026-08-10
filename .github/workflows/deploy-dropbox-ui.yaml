@@ -1,0 +1,90 @@
+name: Deploy Dropbox UI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dropbox-ui/**'
+  workflow_dispatch: {}
+
+env:
+  SERVICE_NAME: dropbox-ui
+  IMAGE_NAME: nagrajh/dropbox-ui
+  NAMESPACE: dropbox-lite
+  # VITE_API_BASE_URL is baked into the static bundle at build time (see
+  # dropbox-ui/Dockerfile) - must be the PUBLIC Ingress URL the browser calls,
+  # not an in-cluster DNS name. Same public IP/nip.io host as Lovable's
+  # existing ingress, just the dropbox subdomain (see k8s/infra/ingress.yaml
+  # for the exact IP this nip.io hostname is derived from).
+  VITE_API_BASE_URL: http://dropbox.34-14-138-43.nip.io/api
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  # ============================================================
+  # PHASE 1: BUILD & PUSH
+  # ============================================================
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        working-directory: ./${{ env.SERVICE_NAME }}
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }} \
+            -t docker.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -t docker.io/${{ env.IMAGE_NAME }}:latest \
+            .
+          docker push docker.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push docker.io/${{ env.IMAGE_NAME }}:latest
+
+
+  # ============================================================
+  # PHASE 2: DEPLOY
+  # ============================================================
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Get GKE Credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GCP_CLUSTER }}
+          location: ${{ secrets.GCP_ZONE }}
+
+      - name: Deploy to GKE
+        run: |
+          kubectl set image deployment/${{ env.SERVICE_NAME }} \
+            ${{ env.SERVICE_NAME }}=docker.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -n ${{ env.NAMESPACE }}
+
+      - name: Wait for Rollout
+        run: |
+          kubectl rollout status deployment/${{ env.SERVICE_NAME }} \
+            -n ${{ env.NAMESPACE }} \
+            --timeout=180s
