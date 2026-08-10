@@ -17,6 +17,12 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("NOT_FOUND", ex.getMessage(), Instant.now(), null));
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("FORBIDDEN", ex.getMessage(), Instant.now(), null));
+    }
+
     @ExceptionHandler(DependencyUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleDependencyUnavailable(DependencyUnavailableException ex) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)

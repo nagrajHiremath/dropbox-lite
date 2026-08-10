@@ -2,6 +2,7 @@ package com.dropbox.download_service.client;
 
 import com.dropbox.download_service.dto.FileContentInfoResponse;
 import com.dropbox.download_service.exception.DependencyUnavailableException;
+import com.dropbox.download_service.exception.ForbiddenException;
 import com.dropbox.download_service.exception.ResourceNotFoundException;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.stereotype.Component;
@@ -79,6 +80,7 @@ public class MetadataServiceClient {
      * exempts this specific internal path from its own auth requirement).
      *
      * @throws ResourceNotFoundException      if the token is unknown, revoked, expired, or the file is gone
+     * @throws ForbiddenException             if the share's permission is VIEW rather than DOWNLOAD
      * @throws DependencyUnavailableException if metadata-service could not be reached
      */
     public FileContentInfoResponse getPublicShareContent(String token) {
@@ -90,6 +92,9 @@ public class MetadataServiceClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResourceNotFoundException("Share not found");
+            }
+            if (e.getStatusCode().value() == 403) {
+                throw new ForbiddenException("This share does not permit downloading content");
             }
             throw new DependencyUnavailableException("Metadata service returned an unexpected error", e);
         } catch (RestClientException e) {

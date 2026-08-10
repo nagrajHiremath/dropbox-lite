@@ -10,6 +10,7 @@ import com.dropbox.metadata_service.dto.FileContentInfoResponse;
 import com.dropbox.metadata_service.event.ShareEventData;
 import com.dropbox.metadata_service.event.ShareRevokedEventData;
 import com.dropbox.metadata_service.exception.ConflictException;
+import com.dropbox.metadata_service.exception.ForbiddenException;
 import com.dropbox.metadata_service.exception.InvalidRequestException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FileRepository;
@@ -41,6 +42,7 @@ public class ShareService {
     private static final int TOKEN_BYTES = 32;
     private static final int MAX_TOKEN_ATTEMPTS = 3;
     private static final String SHARE_KEY_PREFIX = "share:";
+    private static final String PERMISSION_DOWNLOAD = "DOWNLOAD";
 
     private final ShareLinkRepository shareLinkRepository;
     private final FileRepository fileRepository;
@@ -129,11 +131,21 @@ public class ShareService {
      * objectKey is deliberately never exposed on PublicShareResponse, so this is
      * service-to-service only (Download Service calls it directly, see
      * InternalPublicShareController).
+     *
+     * <p>A VIEW-only share may resolve metadata (resolvePublicShare) but must
+     * never resolve content - this is the single choke point every content
+     * request (public download endpoint, and any future caller) goes through,
+     * so the permission check belongs here rather than in a controller, where
+     * it would be one accidental new call site away from being bypassed.
      */
     @Transactional(readOnly = true)
     public FileContentInfoResponse resolvePublicShareContent(String rawToken) {
         ActiveShare active = resolveActiveShare(rawToken);
         FileEntity file = active.file();
+
+        if (!PERMISSION_DOWNLOAD.equals(active.share().getPermission())) {
+            throw new ForbiddenException("This share does not permit downloading content");
+        }
 
         if (file.getCurrentVersionId() == null) {
             throw new ResourceNotFoundException("Share not found");
