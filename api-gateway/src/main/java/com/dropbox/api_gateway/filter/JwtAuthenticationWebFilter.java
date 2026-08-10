@@ -5,6 +5,7 @@ import io.jsonwebtoken.Claims;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -48,6 +49,15 @@ public class JwtAuthenticationWebFilter implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
+
+        // CORS preflight requests never carry the app's Authorization header -
+        // let Spring's own CORS handling (spring.cloud.gateway...globalcors)
+        // answer them directly rather than have this filter reject them as
+        // unauthenticated, regardless of the two filters' relative ordering.
+        if (request.getMethod() == HttpMethod.OPTIONS) {
+            return chain.filter(exchange);
+        }
+
         String path = request.getURI().getPath();
 
         // Never trust identity headers supplied by the caller; only the gateway may set them.

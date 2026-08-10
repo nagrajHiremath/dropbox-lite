@@ -1,7 +1,17 @@
+import { ImageIcon } from 'lucide-react'
+import { FilteredFilesView } from '@/components/files/FilteredFilesView'
+import { filesByTypeKey } from '@/hooks/queryKeys'
+import { listFilesByType } from '@/api/files'
+
 export default function PhotosPage() {
   return (
-    <div className="p-6">
-      <h1 className="text-lg font-medium">Photos</h1>
-    </div>
+    <FilteredFilesView
+      title="Photos"
+      queryKey={filesByTypeKey('image')}
+      queryFn={() => listFilesByType('image')}
+      emptyIcon={ImageIcon}
+      emptyTitle="No photos yet"
+      emptyDescription="Image files you upload will show up here."
+    />
   )
 }

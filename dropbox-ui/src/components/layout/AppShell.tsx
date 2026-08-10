@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
+import { UploadTray } from '@/components/upload/UploadTray'
 
 export default function AppShell() {
   return (
@@ -12,6 +13,7 @@ export default function AppShell() {
           <Outlet />
         </main>
       </div>
+      <UploadTray />
     </div>
   )
 }

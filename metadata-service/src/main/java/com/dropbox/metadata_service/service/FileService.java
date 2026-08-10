@@ -2,6 +2,7 @@ package com.dropbox.metadata_service.service;
 
 import com.dropbox.metadata_service.domain.FileEntity;
 import com.dropbox.metadata_service.domain.FileStatus;
+import com.dropbox.metadata_service.domain.FileVersion;
 import com.dropbox.metadata_service.domain.Folder;
 import com.dropbox.metadata_service.dto.MoveFileRequest;
 import com.dropbox.metadata_service.dto.UpdateFileRequest;
@@ -11,6 +12,7 @@ import com.dropbox.metadata_service.exception.NameConflictException;
 import com.dropbox.metadata_service.exception.ResourceNotFoundException;
 import com.dropbox.metadata_service.repository.FileRepository;
 import com.dropbox.metadata_service.repository.FileSpecifications;
+import com.dropbox.metadata_service.repository.FileVersionRepository;
 import com.dropbox.metadata_service.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,9 +26,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +45,7 @@ public class FileService {
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
+    private final FileVersionRepository fileVersionRepository;
     private final OutboxEventWriter outboxEventWriter;
     private final RedisCacheService cacheService;
 
@@ -94,6 +102,49 @@ public class FileService {
 
         Pageable pageable = PageRequest.of(page, cappedSize(size), Sort.by("updatedAt").descending());
         return fileRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * Batches the current-version size lookup for a whole page of files into
+     * one findAllById (WHERE id IN (...)) query, instead of a per-file
+     * getCurrentVersion() call that would turn a file list into an N+1.
+     * Files with no currentVersionId (or whose version somehow can't be
+     * found) are simply absent from the returned map - callers treat that as
+     * "size unknown" (null), not an error.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> currentSizesFor(List<FileEntity> files) {
+        List<UUID> versionIds = files.stream()
+                .map(FileEntity::getCurrentVersionId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (versionIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, Long> sizeByVersionId = fileVersionRepository.findAllById(versionIds).stream()
+                .collect(Collectors.toMap(FileVersion::getId, FileVersion::getSizeBytes));
+
+        Map<UUID, Long> sizeByFileId = new HashMap<>();
+        for (FileEntity file : files) {
+            Long size = sizeByVersionId.get(file.getCurrentVersionId());
+            if (size != null) {
+                sizeByFileId.put(file.getId(), size);
+            }
+        }
+        return sizeByFileId;
+    }
+
+    /** Single-file counterpart of currentSizesFor, for the GET-by-id path. */
+    @Transactional(readOnly = true)
+    public Long currentSizeFor(FileEntity file) {
+        if (file.getCurrentVersionId() == null) {
+            return null;
+        }
+        return fileVersionRepository.findById(file.getCurrentVersionId())
+                .map(FileVersion::getSizeBytes)
+                .orElse(null);
     }
 
     @Transactional

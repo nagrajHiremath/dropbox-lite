@@ -16,6 +16,26 @@ spring:
     gateway:
       server:
         webflux:
+          # Browser CORS - the SPA (dropbox-ui) calls this gateway directly from
+          # its own origin/port (e.g. the Vite dev server), which is cross-origin
+          # from the browser's perspective even though it's all localhost.
+          # allowCredentials is false since auth is a Bearer token in a header,
+          # not a cookie - no need for the stricter same-origin-only wildcard
+          # rules credentialed CORS requires.
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders: "*"
+                allowCredentials: false
+                maxAge: 3600
           routes:
             # RDS-03: RequestRateLimiter args grouped by TECHNICAL_DESIGN.md 44's
             # priority tiers. YAML anchors (&name / *name) avoid duplicating args

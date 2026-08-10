@@ -1,7 +1,17 @@
+import { ClockIcon } from 'lucide-react'
+import { FilteredFilesView } from '@/components/files/FilteredFilesView'
+import { recentFilesKey } from '@/hooks/queryKeys'
+import { listRecentFiles } from '@/api/files'
+
 export default function RecentPage() {
   return (
-    <div className="p-6">
-      <h1 className="text-lg font-medium">Recent</h1>
-    </div>
+    <FilteredFilesView
+      title="Recent"
+      queryKey={recentFilesKey}
+      queryFn={() => listRecentFiles()}
+      emptyIcon={ClockIcon}
+      emptyTitle="No recent files"
+      emptyDescription="Files you've recently added or edited will show up here."
+    />
   )
 }

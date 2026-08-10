@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -34,7 +35,8 @@ public class FileController {
     public ResponseEntity<FileResponse> getFile(@AuthenticationPrincipal UUID ownerId,
                                                  @PathVariable UUID fileId) {
         FileEntity file = fileService.getFile(ownerId, fileId);
-        return ResponseEntity.ok(FileResponse.from(file));
+        Long sizeBytes = fileService.currentSizeFor(file);
+        return ResponseEntity.ok(FileResponse.from(file, sizeBytes));
     }
 
     @GetMapping
@@ -46,7 +48,9 @@ public class FileController {
                                                                   @RequestParam(defaultValue = "0") int page,
                                                                   @RequestParam(defaultValue = "20") int size) {
         Page<FileEntity> files = fileService.listFiles(ownerId, folderId, view, type, status, page, size);
-        return ResponseEntity.ok(PageResponse.from(files, FileResponse::from));
+        Map<UUID, Long> sizeByFileId = fileService.currentSizesFor(files.getContent());
+        return ResponseEntity.ok(
+                PageResponse.from(files, f -> FileResponse.from(f, sizeByFileId.get(f.getId()))));
     }
 
     @PatchMapping("/{fileId}")
