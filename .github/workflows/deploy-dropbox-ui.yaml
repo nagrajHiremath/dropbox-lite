@@ -17,7 +17,13 @@ env:
   # not an in-cluster DNS name. Same public IP/nip.io host as Lovable's
   # existing ingress, just the dropbox subdomain (see k8s/infra/ingress.yaml
   # for the exact IP this nip.io hostname is derived from).
-  VITE_API_BASE_URL: http://dropbox.34-14-138-43.nip.io/api
+  #
+  # No trailing /api - src/api/client.ts's apiFetch() already prefixes every
+  # call with /api/v1/... itself (see doRefresh's apiFetch('/api/v1/auth/refresh', ...)),
+  # so a base URL that also ends in /api doubles it to /api/api/v1/... which
+  # api-gateway's JwtAuthenticationWebFilter doesn't recognize as a public
+  # route, producing a 401 instead of reaching account-service at all.
+  VITE_API_BASE_URL: http://dropbox.34-14-138-43.nip.io
 
 permissions:
   id-token: write
