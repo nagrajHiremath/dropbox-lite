@@ -1,39 +1,43 @@
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
+  DownloadIcon,
   PauseCircleIcon,
   PauseIcon,
   PlayIcon,
   RotateCcwIcon,
-  UploadIcon,
   XIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { formatBytes } from '@/lib/format'
-import type { UploadEntry } from '@/store/uploadQueueStore'
+import type { DownloadEntry } from '@/store/downloadQueueStore'
 
-interface UploadTrayItemProps {
-  entry: UploadEntry
+interface DownloadTrayItemProps {
+  entry: DownloadEntry
   onRetry: () => void
   onPause: () => void
   onCancel: () => void
   onDismiss: () => void
 }
 
-export function UploadTrayItem({
+/** Counterpart to UploadTrayItem - same layout/status language, adapted for
+ * download's status set (no "completing" upload-finalization step; instead
+ * "assembling" while downloadEngine joins the downloaded chunks into one
+ * Blob for the browser's save dialog). */
+export function DownloadTrayItem({
   entry,
   onRetry,
   onPause,
   onCancel,
   onDismiss,
-}: UploadTrayItemProps) {
-  const isActive = entry.status === 'uploading' || entry.status === 'completing'
+}: DownloadTrayItemProps) {
+  const isActive = entry.status === 'downloading' || entry.status === 'assembling'
   const showProgress = isActive || entry.status === 'paused'
   const canCancel = isActive || entry.status === 'paused'
   const percent =
     entry.totalBytes > 0
-      ? Math.min(100, Math.round((entry.uploadedBytes / entry.totalBytes) * 100))
+      ? Math.min(100, Math.round((entry.downloadedBytes / entry.totalBytes) * 100))
       : 0
 
   return (
@@ -43,34 +47,34 @@ export function UploadTrayItem({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{entry.fileName}</p>
         {showProgress && <Progress value={percent} className="mt-1 h-1.5" />}
-        {entry.status === 'uploading' && (
+        {entry.status === 'downloading' && (
           <p className="text-muted-foreground mt-0.5 text-xs">
-            {formatBytes(entry.uploadedBytes)} of {formatBytes(entry.totalBytes)}
+            {formatBytes(entry.downloadedBytes)} of {formatBytes(entry.totalBytes)}
           </p>
         )}
-        {entry.status === 'completing' && (
+        {entry.status === 'assembling' && (
           <p className="text-muted-foreground mt-0.5 text-xs">Finishing…</p>
         )}
         {entry.status === 'paused' && (
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Paused at {formatBytes(entry.uploadedBytes)} of {formatBytes(entry.totalBytes)}
+            Paused at {formatBytes(entry.downloadedBytes)} of {formatBytes(entry.totalBytes)}
           </p>
         )}
         {entry.status === 'failed' && (
-          <p className="text-destructive mt-0.5 text-xs">{entry.error ?? 'Upload failed'}</p>
+          <p className="text-destructive mt-0.5 text-xs">{entry.error ?? 'Download failed'}</p>
         )}
         {entry.status === 'aborted' && (
           <p className="text-muted-foreground mt-0.5 text-xs">Canceled</p>
         )}
       </div>
 
-      {entry.status === 'uploading' && (
+      {entry.status === 'downloading' && (
         <Button
           variant="ghost"
           size="icon"
           className="size-6 shrink-0"
           onClick={onPause}
-          aria-label="Pause upload"
+          aria-label="Pause download"
         >
           <PauseIcon className="size-4" />
         </Button>
@@ -81,7 +85,7 @@ export function UploadTrayItem({
           size="icon"
           className="size-6 shrink-0"
           onClick={onRetry}
-          aria-label="Resume upload"
+          aria-label="Resume download"
         >
           <PlayIcon className="size-4" />
         </Button>
@@ -92,7 +96,7 @@ export function UploadTrayItem({
           size="icon"
           className="size-6 shrink-0"
           onClick={onCancel}
-          aria-label="Cancel upload"
+          aria-label="Cancel download"
         >
           <XIcon className="size-4" />
         </Button>
@@ -103,7 +107,7 @@ export function UploadTrayItem({
           size="icon"
           className="size-6 shrink-0"
           onClick={onRetry}
-          aria-label="Retry upload"
+          aria-label="Retry download"
         >
           <RotateCcwIcon className="size-4" />
         </Button>
@@ -123,7 +127,7 @@ export function UploadTrayItem({
   )
 }
 
-function StatusIcon({ status }: { status: UploadEntry['status'] }) {
+function StatusIcon({ status }: { status: DownloadEntry['status'] }) {
   switch (status) {
     case 'done':
       return <CheckCircle2Icon className="size-5 shrink-0 text-emerald-600" aria-hidden="true" />
@@ -134,6 +138,6 @@ function StatusIcon({ status }: { status: UploadEntry['status'] }) {
         <PauseCircleIcon className="text-muted-foreground size-5 shrink-0" aria-hidden="true" />
       )
     default:
-      return <UploadIcon className="text-muted-foreground size-5 shrink-0" aria-hidden="true" />
+      return <DownloadIcon className="text-muted-foreground size-5 shrink-0" aria-hidden="true" />
   }
 }

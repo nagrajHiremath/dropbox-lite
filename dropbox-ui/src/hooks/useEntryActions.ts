@@ -1,10 +1,9 @@
 import type { DragEvent, MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
 import { getEntryIcon, type BrowserEntry } from '@/lib/fileIcons'
-import { downloadFile } from '@/lib/download'
 import { formatBytes } from '@/lib/format'
 import { useDragStore } from '@/store/dragStore'
+import { useDownloadQueueStore } from '@/store/downloadQueueStore'
 import { useDropTarget } from '@/hooks/useDropTarget'
 import { useDragMove } from '@/hooks/useDragMove'
 import { getMenuItems } from '@/components/files/entryMenu'
@@ -46,6 +45,7 @@ export function useEntryActions({
   const setDragged = useDragStore((s) => s.setDragged)
   const clearDragged = useDragStore((s) => s.clearDragged)
   const moveDraggedTo = useDragMove()
+  const enqueueDownload = useDownloadQueueStore((s) => s.enqueue)
 
   const id = entry.type === 'folder' ? entry.folder.id : entry.file.id
   const name = entry.type === 'folder' ? entry.folder.name : entry.file.name
@@ -86,10 +86,13 @@ export function useEntryActions({
   }
 
   function handleDownload() {
-    if (entry.type === 'folder') return
-    downloadFile(entry.file.id, entry.file.name).catch(() =>
-      toast.error("Couldn't download this file. Please try again."),
-    )
+    if (entry.type === 'folder' || entry.file.sizeBytes == null) return
+    enqueueDownload({
+      fileId: entry.file.id,
+      fileName: entry.file.name,
+      mimeType: entry.file.mimeType,
+      totalBytes: entry.file.sizeBytes,
+    })
   }
 
   // Plain click no longer selects - it just clears any active selection (a

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
 import { DownloadIcon, FileIcon, Share2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,8 +9,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { downloadFile, fetchFileBlob } from '@/lib/download'
+import { fetchFileBlob } from '@/lib/download'
 import { formatBytes } from '@/lib/format'
+import { useDownloadQueueStore } from '@/store/downloadQueueStore'
 import type { FileEntry } from '@/api/files'
 
 interface FilePreviewDialogProps {
@@ -72,6 +72,7 @@ export function FilePreviewDialog({ file, onOpenChange, onRequestShare }: FilePr
   const [textContent, setTextContent] = useState<{ text: string; truncated: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const enqueueDownload = useDownloadQueueStore((s) => s.enqueue)
 
   const kind = previewKindFor(file?.mimeType ?? null)
 
@@ -119,10 +120,13 @@ export function FilePreviewDialog({ file, onOpenChange, onRequestShare }: FilePr
   }
 
   function handleDownload() {
-    if (!file) return
-    downloadFile(file.id, file.name).catch(() =>
-      toast.error("Couldn't download this file. Please try again."),
-    )
+    if (!file || file.sizeBytes == null) return
+    enqueueDownload({
+      fileId: file.id,
+      fileName: file.name,
+      mimeType: file.mimeType,
+      totalBytes: file.sizeBytes,
+    })
   }
 
   const isFullBleed = kind === 'pdf' || kind === 'text'

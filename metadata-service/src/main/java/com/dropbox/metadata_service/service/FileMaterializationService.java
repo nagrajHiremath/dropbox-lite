@@ -155,6 +155,6 @@ public class FileMaterializationService {
     }
 
     private MaterializeFileResponse toResponse(FileVersion version) {
-        return new MaterializeFileResponse(version.getFileId(), version.getId(), version.getVersionNumber());
+        return new MaterializeFileResponse(version.getFileId(), version.getId(), version.getVersionNumber(), version.getSizeBytes());
     }
 }

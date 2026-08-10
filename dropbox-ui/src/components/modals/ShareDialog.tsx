@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CopyIcon, LinkIcon, Trash2Icon } from 'lucide-react'
@@ -63,6 +63,7 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
   const [expiryOption, setExpiryOption] = useState<ExpiryOption>('7d')
   const [createdLink, setCreatedLink] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const linkInputRef = useRef<HTMLInputElement>(null)
 
   const createShareMutation = useCreateShare()
   const revokeShareMutation = useRevokeShare()
@@ -103,7 +104,7 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
   }
 
   function handleCopy(link: string) {
-    void copyText(link).then((ok) =>
+    void copyText(link, linkInputRef.current ?? undefined).then((ok) =>
       ok ? toast.success('Link copied') : toast.error('Could not copy link'),
     )
   }
@@ -174,7 +175,12 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
               Copy this link now — you won't be able to see it again.
             </p>
             <div className="flex gap-2">
-              <Input readOnly value={createdLink} onFocus={(e) => e.target.select()} />
+              <Input
+                ref={linkInputRef}
+                readOnly
+                value={createdLink}
+                onFocus={(e) => e.target.select()}
+              />
               <Button
                 type="button"
                 variant="outline"

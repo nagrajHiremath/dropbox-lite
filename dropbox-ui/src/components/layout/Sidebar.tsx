@@ -8,9 +8,15 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { useDropTarget } from '@/hooks/useDropTarget'
 import { useDragMove } from '@/hooks/useDragMove'
+import { Progress } from '@/components/ui/progress'
+import { getStorageUsage } from '@/api/account'
+import { storageUsageKey } from '@/hooks/queryKeys'
+import { formatBytes } from '@/lib/format'
+import { AccountMenu } from './AccountMenu'
 
 interface NavItem {
   to: string
@@ -40,8 +46,8 @@ export default function Sidebar() {
   )
 
   return (
-    <aside className="bg-sidebar text-sidebar-foreground flex w-60 shrink-0 flex-col border-r">
-      <div className="flex h-14 items-center gap-2 border-b px-4 text-lg font-semibold">
+    <aside className="bg-sidebar text-sidebar-foreground flex w-60 shrink-0 flex-col">
+      <div className="flex h-16 items-center gap-2 border-b px-4 text-lg font-semibold">
         <div className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-lg">
           <PackageIcon className="size-4" aria-hidden="true" />
         </div>
@@ -57,10 +63,9 @@ export default function Sidebar() {
             className={({ isActive }) =>
               cn(
                 'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary before:transition-opacity before:content-[""]',
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold before:opacity-100'
-                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground before:opacity-0',
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold'
+                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
                 to === '/files' && isOver && 'ring-primary bg-primary/10 ring-2',
               )
             }
@@ -70,6 +75,31 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      <div className="mt-auto flex flex-col gap-3 border-t px-3 py-3">
+        <StorageUsageSection />
+        <AccountMenu />
+      </div>
     </aside>
+  )
+}
+
+/** Refetched on window focus (TanStack Query's default) so usage updates
+ * after uploads/deletes without needing manual invalidation wired through
+ * every mutation that changes it. */
+function StorageUsageSection() {
+  const { data } = useQuery({ queryKey: storageUsageKey, queryFn: getStorageUsage })
+  if (!data) return null
+
+  const percent =
+    data.maxBytes > 0 ? Math.min(100, Math.round((data.usedBytes / data.maxBytes) * 100)) : 0
+
+  return (
+    <div className="px-2">
+      <Progress value={percent} className="h-1.5" />
+      <p className="text-muted-foreground mt-2 text-xs">
+        {formatBytes(data.usedBytes)} of {formatBytes(data.maxBytes)} used
+      </p>
+    </div>
   )
 }

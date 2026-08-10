@@ -1,5 +1,6 @@
 package com.dropbox.upload_service.service;
 
+import com.dropbox.upload_service.client.AccountServiceClient;
 import com.dropbox.upload_service.client.MetadataServiceClient;
 import com.dropbox.upload_service.domain.IdempotencyKey;
 import com.dropbox.upload_service.domain.UploadSession;
@@ -11,6 +12,7 @@ import com.dropbox.upload_service.dto.InitiateUploadResponse;
 import com.dropbox.upload_service.dto.InitiateVersionUploadRequest;
 import com.dropbox.upload_service.exception.DependencyUnavailableException;
 import com.dropbox.upload_service.exception.IdempotencyConflictException;
+import com.dropbox.upload_service.exception.QuotaExceededException;
 import com.dropbox.upload_service.repository.UploadSessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +49,7 @@ public class UploadInitiationService {
     private final UploadSessionRepository uploadSessionRepository;
     private final IdempotencyKeyWriter idempotencyKeyWriter;
     private final MetadataServiceClient metadataServiceClient;
+    private final AccountServiceClient accountServiceClient;
     private final MinioClient minioClient;
     private final ObjectMapper objectMapper;
 
@@ -115,6 +118,7 @@ public class UploadInitiationService {
         if (request.folderId() != null) {
             metadataServiceClient.requireOwnedFolder(request.folderId(), ownerId);
         }
+        checkQuota(ownerId, request.size());
 
         ensureStorageBackendReachable();
 
@@ -145,6 +149,7 @@ public class UploadInitiationService {
 
     private InitiateUploadResponse createVersionSession(UUID ownerId, UUID fileId, InitiateVersionUploadRequest request) {
         FileInfo file = metadataServiceClient.requireOwnedActiveFile(fileId, ownerId);
+        checkQuota(ownerId, request.size());
 
         ensureStorageBackendReachable();
 
@@ -230,6 +235,21 @@ public class UploadInitiationService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IdempotencyConflictException("Interrupted while waiting for a concurrent identical request");
+        }
+    }
+
+    /**
+     * TOCTOU note: this check and the eventual usedBytes increment (applied
+     * asynchronously by account-service's StorageUsageEventConsumer once the
+     * upload actually completes) aren't atomic with each other - two
+     * concurrent initiations can each pass this check before either's usage
+     * is reflected. Acceptable for MVP: it stops the common case (a user
+     * well past quota trying to upload more), not a hard reservation system.
+     */
+    private void checkQuota(UUID ownerId, long incomingSize) {
+        AccountServiceClient.StorageUsage usage = accountServiceClient.getStorageUsage(ownerId);
+        if (usage.usedBytes() + incomingSize > usage.maxBytes()) {
+            throw new QuotaExceededException("Storage quota exceeded");
         }
     }
 

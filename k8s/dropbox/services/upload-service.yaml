@@ -53,6 +53,8 @@ spec:
               value: dropbox-files
             - name: METADATA_SERVICE_URL
               value: http://metadata-service:8082
+            - name: ACCOUNT_SERVICE_URL
+              value: http://account-service:8081
           resources:
             requests:
               cpu: 100m

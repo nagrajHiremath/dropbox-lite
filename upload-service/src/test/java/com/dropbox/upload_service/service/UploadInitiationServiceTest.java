@@ -1,5 +1,6 @@
 package com.dropbox.upload_service.service;
 
+import com.dropbox.upload_service.client.AccountServiceClient;
 import com.dropbox.upload_service.client.MetadataServiceClient;
 import com.dropbox.upload_service.domain.IdempotencyKey;
 import com.dropbox.upload_service.domain.UploadSession;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +42,8 @@ class UploadInitiationServiceTest {
     @Mock
     private MetadataServiceClient metadataServiceClient;
     @Mock
+    private AccountServiceClient accountServiceClient;
+    @Mock
     private MinioClient minioClient;
 
     private UploadInitiationService service;
@@ -47,10 +51,15 @@ class UploadInitiationServiceTest {
     @BeforeEach
     void setUp() {
         service = new UploadInitiationService(
-                uploadSessionRepository, idempotencyKeyWriter, metadataServiceClient,
+                uploadSessionRepository, idempotencyKeyWriter, metadataServiceClient, accountServiceClient,
                 minioClient, new ObjectMapper());
         ReflectionTestUtils.setField(service, "bucket", "dropbox-files");
         ReflectionTestUtils.setField(service, "sessionExpirationHours", 24L);
+        // Not every test reaches the quota check (e.g. idempotency-replay tests
+        // short-circuit before it), so this default is lenient rather than
+        // asserted-used, matching the same reasoning as any other incidental stub here.
+        lenient().when(accountServiceClient.getStorageUsage(any()))
+                .thenReturn(new AccountServiceClient.StorageUsage(0L, Long.MAX_VALUE));
     }
 
     private InitiateUploadRequest validRequest() {

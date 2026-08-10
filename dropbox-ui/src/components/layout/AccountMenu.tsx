@@ -17,10 +17,15 @@ import { useAuthStore } from '@/store/authStore'
  * exist. Logout is purely client-side: the backend has no logout/revoke
  * endpoint either, so clearing the persisted auth state (which RequireAuth
  * reacts to) and redirecting is the whole flow.
+ *
+ * displayName is optional at registration (a user can leave it blank), so
+ * it's shown when present and falls back to email otherwise - same fallback
+ * both in the trigger row and the dropdown label.
  */
 export function AccountMenu() {
   const navigate = useNavigate()
   const email = useAuthStore((s) => s.email)
+  const displayName = useAuthStore((s) => s.displayName)
   const clear = useAuthStore((s) => s.clear)
 
   function handleLogout() {
@@ -28,22 +33,34 @@ export function AccountMenu() {
     navigate('/login', { replace: true })
   }
 
-  const initial = email ? email.charAt(0).toUpperCase() : '?'
+  const primaryLabel = displayName || email || 'Signed in'
+  const initial = primaryLabel.charAt(0).toUpperCase()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="bg-primary text-primary-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm font-medium outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="hover:bg-accent flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50"
           aria-label="Account menu"
         >
-          {initial}
+          <span className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-medium">
+            {initial}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{primaryLabel}</span>
+            {displayName && email && (
+              <span className="text-muted-foreground block truncate text-xs">{email}</span>
+            )}
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-muted-foreground truncate font-normal">
-          {email ?? 'Signed in'}
+        <DropdownMenuLabel className="font-normal">
+          <span className="block truncate text-sm font-medium">{primaryLabel}</span>
+          {displayName && email && (
+            <span className="text-muted-foreground block truncate text-xs">{email}</span>
+          )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={handleLogout}>

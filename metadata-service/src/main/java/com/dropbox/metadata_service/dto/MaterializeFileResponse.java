@@ -5,6 +5,7 @@ import java.util.UUID;
 public record MaterializeFileResponse(
         UUID fileId,
         UUID versionId,
-        int versionNumber
+        int versionNumber,
+        long sizeBytes
 ) {
 }

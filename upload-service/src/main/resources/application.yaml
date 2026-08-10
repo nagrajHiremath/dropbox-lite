@@ -29,6 +29,9 @@ eureka:
 metadata-service:
   url: ${METADATA_SERVICE_URL:http://localhost:8082}
 
+account-service:
+  url: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
+
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}

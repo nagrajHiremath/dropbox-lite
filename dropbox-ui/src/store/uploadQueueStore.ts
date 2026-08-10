@@ -14,6 +14,10 @@ export interface UploadEntry {
   uploadId?: string
   resultFileId?: string
   resultVersionId?: string
+  /** Merge-sort key for TransferTray's combined upload+download list -
+   * trackingId (a UUID) isn't chronological, so this is what "most recent
+   * first" actually sorts on. */
+  createdAt: number
 }
 
 interface UploadQueueState {
@@ -55,6 +59,7 @@ export const useUploadQueueStore = create<UploadQueueState>()((set) => ({
           totalBytes: file.size,
           uploadedBytes: 0,
           status: 'uploading',
+          createdAt: Date.now(),
         },
       },
     }))

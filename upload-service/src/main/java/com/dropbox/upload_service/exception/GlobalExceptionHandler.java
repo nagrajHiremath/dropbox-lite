@@ -65,4 +65,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("UPLOAD_LOCKED", ex.getMessage(), Instant.now(), null));
     }
+
+    @ExceptionHandler(QuotaExceededException.class)
+    public ResponseEntity<ErrorResponse> handleQuotaExceeded(QuotaExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(new ErrorResponse("QUOTA_EXCEEDED", ex.getMessage(), Instant.now(), null));
+    }
 }

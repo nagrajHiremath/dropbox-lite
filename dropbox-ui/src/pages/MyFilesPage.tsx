@@ -6,6 +6,7 @@ import { FolderPlusIcon, SearchIcon, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/common/PageHeader'
+import type { BreadcrumbItem } from '@/components/layout/Breadcrumbs'
 import { FileTable } from '@/components/files/FileTable'
 import { EntryGrid } from '@/components/files/EntryGrid'
 import { ViewModeToggle } from '@/components/files/ViewModeToggle'
@@ -63,9 +64,6 @@ export default function MyFilesPage() {
     queryKey: filesKey(folderId),
     queryFn: () => listFiles(folderId),
   })
-  // Shares its cache entry with TopBar's own useBreadcrumbs(folderId) call for
-  // the same folderId - TanStack Query dedupes identical active queries, so
-  // this isn't a second network request.
   const { data: chain } = useBreadcrumbs(folderId)
 
   const folders = foldersQuery.data?.content ?? EMPTY_FOLDERS
@@ -238,7 +236,15 @@ export default function MyFilesPage() {
 
   const isLoading = foldersQuery.isLoading || filesQuery.isLoading
   const isError = foldersQuery.isError || filesQuery.isError
-  const title = folderId ? (chain?.[chain.length - 1]?.name ?? 'My Files') : 'My Files'
+  const breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'My Files', to: '/files', isFolderCrumb: true, folderId: undefined },
+    ...(chain ?? []).map((f) => ({
+      label: f.name,
+      to: `/files/${f.id}`,
+      isFolderCrumb: true,
+      folderId: f.id,
+    })),
+  ]
 
   return (
     <UploadDropZone onDropEntries={handleDroppedEntries}>
@@ -253,7 +259,7 @@ export default function MyFilesPage() {
           />
 
           <PageHeader
-            title={title}
+            breadcrumbs={breadcrumbItems}
             selection={{
               count: selected.size,
               onClear: clear,
@@ -261,9 +267,9 @@ export default function MyFilesPage() {
               onTrashSelected: trashSelected,
             }}
           >
-            <div className="relative w-48">
+            <div className="relative w-56">
               <SearchIcon
-                className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
                 aria-hidden="true"
               />
               <Input
@@ -272,7 +278,7 @@ export default function MyFilesPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search this folder"
                 aria-label="Search files and folders in this folder"
-                className="h-8 pl-8"
+                className="bg-background h-9 rounded-full border-transparent pl-9 shadow-none"
               />
             </div>
             <ViewModeToggle />

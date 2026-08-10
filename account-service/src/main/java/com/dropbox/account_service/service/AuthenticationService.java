@@ -69,6 +69,6 @@ public class AuthenticationService {
         String accessToken = jwtService.generateToken(user.getId(), user.getEmail());
         String refreshToken = refreshTokenService.issue(user.getId());
         return new LoginResponse(accessToken, "Bearer", jwtService.getExpirationMs(),
-                user.getId(), user.getEmail(), refreshToken);
+                user.getId(), user.getEmail(), user.getDisplayName(), refreshToken);
     }
 }

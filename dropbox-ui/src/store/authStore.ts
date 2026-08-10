@@ -6,6 +6,7 @@ export interface AuthSession {
   refreshToken: string
   userId: string
   email: string
+  displayName: string | null
 }
 
 interface AuthState extends Partial<AuthSession> {
@@ -28,6 +29,7 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: undefined,
       userId: undefined,
       email: undefined,
+      displayName: undefined,
       isAuthenticated: false,
       setSession: (session) => set({ ...session, isAuthenticated: true }),
       clear: () =>
@@ -36,6 +38,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: undefined,
           userId: undefined,
           email: undefined,
+          displayName: undefined,
           isAuthenticated: false,
         }),
     }),

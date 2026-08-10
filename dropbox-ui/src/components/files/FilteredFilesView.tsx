@@ -116,7 +116,7 @@ export function FilteredFilesView({
   return (
     <>
       <PageHeader
-        title={title}
+        breadcrumbs={[{ label: title }]}
         selection={{
           count: selected.size,
           onClear: clear,
@@ -137,7 +137,7 @@ export function FilteredFilesView({
         <div
           role="table"
           aria-label={title}
-          className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+          className="grid grid-cols-2 gap-4 p-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
         >
           {files.map((file) => (
             <EntryGridTile

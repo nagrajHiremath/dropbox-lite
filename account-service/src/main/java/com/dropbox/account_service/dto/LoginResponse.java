@@ -8,6 +8,7 @@ public record LoginResponse(
         long expiresInMs,
         UUID userId,
         String email,
+        String displayName,
         String refreshToken
 ) {
 }

@@ -75,10 +75,10 @@ export function EntryGridTile(props: EntryGridTileProps) {
           onDoubleClick={handleDoubleClick}
           onContextMenu={handleContextMenu}
           className={cn(
-            'group relative flex cursor-pointer select-none flex-col gap-2 rounded-lg border p-2.5 shadow-sm transition-all',
+            'group bg-card relative flex cursor-pointer select-none flex-col gap-2 rounded-lg border p-2.5 shadow-sm transition-all',
             selected
-              ? 'bg-accent border-accent-foreground/20 shadow-md'
-              : 'hover:border-border hover:shadow-md hover:bg-accent/50',
+              ? 'bg-accent border-primary/40 shadow-md'
+              : 'hover:border-[#D2E3FC] hover:shadow-md',
             isOver && 'bg-primary/10 ring-primary ring-2 ring-inset',
           )}
         >
@@ -98,6 +98,33 @@ export function EntryGridTile(props: EntryGridTileProps) {
             >
               {selected && <CheckIcon className="size-3" aria-hidden="true" />}
             </button>
+          </div>
+
+          <div
+            ref={thumbnailRef}
+            className="bg-muted flex aspect-square items-center justify-center overflow-hidden rounded-md"
+          >
+            {thumbnailUrl && !thumbnailFailed ? (
+              <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Icon
+                className={cn(
+                  'shrink-0',
+                  entry.type === 'folder'
+                    ? 'size-12 text-[#4285F4]'
+                    : 'text-muted-foreground size-10',
+                )}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            )}
+          </div>
+
+          <div className="flex items-end justify-between gap-1">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{name}</p>
+              <p className="text-muted-foreground truncate text-xs">{caption}</p>
+            </div>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -125,26 +152,6 @@ export function EntryGridTile(props: EntryGridTileProps) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-
-          <div
-            ref={thumbnailRef}
-            className="bg-muted flex aspect-square items-center justify-center overflow-hidden rounded-md"
-          >
-            {thumbnailUrl && !thumbnailFailed ? (
-              <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <Icon
-                className="text-muted-foreground size-10"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{name}</p>
-            <p className="text-muted-foreground truncate text-xs">{caption}</p>
           </div>
         </div>
       </ContextMenuTrigger>

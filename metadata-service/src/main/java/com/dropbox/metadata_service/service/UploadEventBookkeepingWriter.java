@@ -40,7 +40,8 @@ class UploadEventBookkeepingWriter {
         processedEventRepository.save(new ProcessedEvent(eventId, consumerName, Instant.now()));
 
         String eventType = isNewFile ? "FILE_CREATED" : "FILE_VERSION_CREATED";
-        FileEventData data = new FileEventData(materialized.fileId(), materialized.versionId(), materialized.versionNumber());
+        FileEventData data = new FileEventData(
+                materialized.fileId(), materialized.versionId(), materialized.versionNumber(), materialized.sizeBytes());
         EventEnvelope<FileEventData> envelope = new EventEnvelope<>(
                 UUID.randomUUID(), eventType, 1, Instant.now(), materialized.fileId(), userId, data);
 

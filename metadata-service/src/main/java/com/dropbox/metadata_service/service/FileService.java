@@ -195,7 +195,7 @@ public class FileService {
         cacheService.evict(FILE_META_KEY_PREFIX + fileId);
 
         outboxEventWriter.enqueue("FILE", fileId, "FILE_TRASHED", ownerId,
-                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId(), null));
     }
 
     @Transactional
@@ -216,7 +216,7 @@ public class FileService {
         cacheService.evict(FILE_META_KEY_PREFIX + fileId);
 
         outboxEventWriter.enqueue("FILE", fileId, "FILE_RESTORED", ownerId,
-                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId(), null));
 
         return file;
     }
@@ -242,8 +242,9 @@ public class FileService {
         fileRepository.save(file);
         cacheService.evict(FILE_META_KEY_PREFIX + fileId);
 
+        long totalSizeBytes = fileVersionRepository.sumSizeBytesByFileId(fileId);
         outboxEventWriter.enqueue("FILE", fileId, "FILE_PERMANENTLY_DELETED", ownerId,
-                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId()));
+                new FileLifecycleEventData(fileId, file.getName(), file.getFolderId(), totalSizeBytes));
     }
 
     private void assertNameAvailable(UUID ownerId, UUID folderId, String name, UUID excludeFileId) {

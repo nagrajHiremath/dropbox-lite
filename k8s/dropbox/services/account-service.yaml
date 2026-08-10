@@ -38,6 +38,8 @@ spec:
                 secretKeyRef:
                   name: dropbox-secrets
                   key: JWT_SECRET
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
           resources:
             requests:
               cpu: 100m
