@@ -1,0 +1,72 @@
+# k8s/dropbox/services/api-gateway.yaml
+#
+# JWT_SECRET here MUST be the same value as account-service's JWT_SECRET -
+# both read the same dropbox-secrets key, so they always match by
+# construction (account-service signs tokens, api-gateway validates them).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: dropbox-lite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: nagrajh/dropbox-api-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REDIS_HOST
+              value: redis
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: JWT_SECRET
+            - name: ACCOUNT_SERVICE_URL
+              value: http://account-service:8081
+            - name: UPLOAD_SERVICE_URL
+              value: http://upload-service:8083
+            - name: DOWNLOAD_SERVICE_URL
+              value: http://download-service:8084
+            - name: METADATA_SERVICE_URL
+              value: http://metadata-service:8082
+            - name: CORS_ALLOWED_ORIGINS
+              value: http://dropbox.34-14-138-43.nip.io
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: dropbox-lite
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,48 @@
+# k8s/dropbox/services/dropbox-ui.yaml
+#
+# No env vars at runtime - VITE_API_BASE_URL is baked into the static bundle
+# at image build time (see dropbox-ui/Dockerfile and
+# .github/workflows/deploy-dropbox-ui.yaml), not read from the container
+# environment.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dropbox-ui
+  namespace: dropbox-lite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dropbox-ui
+  template:
+    metadata:
+      labels:
+        app: dropbox-ui
+    spec:
+      containers:
+        - name: dropbox-ui
+          image: nagrajh/dropbox-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dropbox-ui
+  namespace: dropbox-lite
+spec:
+  type: ClusterIP
+  selector:
+    app: dropbox-ui
+  ports:
+    - port: 80
+      targetPort: 80

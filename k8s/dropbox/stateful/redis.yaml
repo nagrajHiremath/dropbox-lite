@@ -1,0 +1,60 @@
+# k8s/dropbox/stateful/redis.yaml
+#
+# Isolated instance, own StatefulSet/PVC - not shared with Lovable's redis in
+# lovable-core (see the shared-Redis key-collision risk discussion: gateway
+# rate-limiter keys, metadata cache-aside keys, and distributed lock keys all
+# would've landed in the same unauthenticated DB 0 as whatever Lovable's
+# reverse-proxy uses).
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: dropbox-lite
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  serviceName: redis
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: dropbox-lite
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - port: 6379

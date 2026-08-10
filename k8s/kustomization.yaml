@@ -1,0 +1,52 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Create namespaces first
+resources:
+  # Infrastructure and base resources
+  - infra/namespaces.yaml
+  - infra/core-network-policy.yaml
+  - infra/preview-network-policy.yaml
+  - infra/runner-pool.yaml
+  - infra/ingress.yaml
+
+  # Stateful services (databases, message queues, storage)
+  - stateful/kafka.yaml
+  - stateful/minio.yaml
+  - stateful/pgvector.yaml
+  - stateful/redis.yaml
+
+  # Microservices
+  - services/config-service.yaml
+  - services/account-service.yaml
+  - services/api-gateway.yaml
+  - services/intelligence-service.yaml
+  - services/workspace-service.yaml
+  - services/lovable-ui.yaml
+
+  # Reverse proxy
+  - reverse-proxy/proxy-deployment.yaml
+
+# Generate secrets from .env file
+secretGenerator:
+  - name: app-secrets
+    namespace: lovable-core
+    envs:
+      - .env
+    behavior: create
+    options:
+      disableNameSuffixHash: true
+
+# Replicas configuration (can be overridden in overlays)
+replicas:
+  - name: account-service
+    count: 1
+  - name: api-gateway
+    count: 1
+  - name: config-service
+    count: 1
+  - name: intelligence-service
+    count: 1
+  - name: workspace-service
+    count: 1
+

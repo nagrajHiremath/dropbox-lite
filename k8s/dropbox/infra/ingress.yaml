@@ -1,0 +1,42 @@
+# k8s/dropbox/infra/ingress.yaml
+#
+# Additive only - a new Ingress object, same ingressClassName: nginx as
+# Lovable's lovable-main-ingress, so it's served by the same shared
+# ingress-nginx controller/LoadBalancer IP without touching that file at all.
+# Subdomain routing (not path-prefix) so dropbox-ui's Vite build needs no
+# base-path changes and no nginx rewrite rules.
+#
+# Exact host match (dropbox.<ip>.nip.io) takes precedence over Lovable's
+# existing wildcard rule (*.<ip>.nip.io -> reverse-proxy) per standard nginx
+# host-matching precedence, so this doesn't steal traffic from Lovable's
+# preview subdomains - see the routing-safety discussion for the full
+# reasoning.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dropbox-ingress
+  namespace: dropbox-lite
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: "nginx"
+  rules:
+    - host: "dropbox.34-14-138-43.nip.io"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dropbox-ui
+                port:
+                  number: 80

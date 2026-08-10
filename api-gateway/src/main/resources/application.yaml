@@ -42,7 +42,7 @@ spring:
             # across the two routes each in the upload and public-share tiers.
             # Route predicates/uri/ordering are otherwise untouched.
             - id: account-service
-              uri: lb://account-service
+              uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
               predicates:
                 - Path=/api/v1/auth/**,/api/v1/users/**
               filters:
@@ -53,7 +53,7 @@ spring:
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@ipKeyResolver}"
             - id: upload-new-version
-              uri: lb://upload-service
+              uri: ${UPLOAD_SERVICE_URL:http://localhost:8083}
               predicates:
                 - Path=/api/v1/files/*/uploads
               filters:
@@ -64,7 +64,7 @@ spring:
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@userKeyResolver}"
             - id: download-file-content
-              uri: lb://download-service
+              uri: ${DOWNLOAD_SERVICE_URL:http://localhost:8084}
               predicates:
                 - Path=/api/v1/files/*/content,/api/v1/files/*/versions/*/content
               filters:
@@ -75,7 +75,7 @@ spring:
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@userKeyResolver}"
             - id: metadata-service
-              uri: lb://metadata-service
+              uri: ${METADATA_SERVICE_URL:http://localhost:8082}
               predicates:
                 - Path=/api/v1/files/**,/api/v1/folders/**,/api/v1/shares/**
               filters:
@@ -86,7 +86,7 @@ spring:
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@userKeyResolver}"
             - id: public-share-content
-              uri: lb://download-service
+              uri: ${DOWNLOAD_SERVICE_URL:http://localhost:8084}
               predicates:
                 - Path=/api/v1/public/shares/*/content
               filters:
@@ -97,14 +97,14 @@ spring:
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@ipKeyResolver}"
             - id: public-share-metadata
-              uri: lb://metadata-service
+              uri: ${METADATA_SERVICE_URL:http://localhost:8082}
               predicates:
                 - Path=/api/v1/public/shares/**
               filters:
                 - name: RequestRateLimiter
                   args: *publicShareRateLimit
             - id: upload-service
-              uri: lb://upload-service
+              uri: ${UPLOAD_SERVICE_URL:http://localhost:8083}
               predicates:
                 - Path=/api/v1/uploads/**
               filters:
@@ -116,8 +116,7 @@ server:
 
 eureka:
   client:
-    service-url:
-      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    enabled: false
 
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}

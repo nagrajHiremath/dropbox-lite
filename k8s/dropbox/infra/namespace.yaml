@@ -1,0 +1,11 @@
+# k8s/dropbox/infra/namespace.yaml
+#
+# Dropbox Lite gets its own namespace, fully isolated from Lovable's
+# lovable-core - separate Postgres/Kafka/Redis/MinIO, separate credentials,
+# no changes to Lovable's NetworkPolicies. See the deployment plan discussion
+# for why isolated stateful sets were chosen over reusing lovable-core's.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dropbox-lite

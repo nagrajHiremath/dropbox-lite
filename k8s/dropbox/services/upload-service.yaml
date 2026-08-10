@@ -1,0 +1,89 @@
+# k8s/dropbox/services/upload-service.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upload-service
+  namespace: dropbox-lite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: upload-service
+  template:
+    metadata:
+      labels:
+        app: upload-service
+    spec:
+      containers:
+        - name: upload-service
+          image: nagrajh/dropbox-upload-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_NAME
+              value: upload_db
+            - name: DB_USER
+              value: dropbox
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: DB_PASSWORD
+            - name: REDIS_HOST
+              value: redis
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: MINIO_ENDPOINT
+              value: http://minio:9000
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: dropbox-files
+            - name: METADATA_SERVICE_URL
+              value: http://metadata-service:8082
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upload-service
+  namespace: dropbox-lite
+spec:
+  selector:
+    app: upload-service
+  ports:
+    - port: 8083
+      targetPort: 8083

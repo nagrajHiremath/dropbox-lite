@@ -4,7 +4,7 @@ import com.dropbox.download_service.dto.FileContentInfoResponse;
 import com.dropbox.download_service.exception.DependencyUnavailableException;
 import com.dropbox.download_service.exception.ForbiddenException;
 import com.dropbox.download_service.exception.ResourceNotFoundException;
-import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -13,18 +13,20 @@ import org.springframework.web.client.RestClientResponseException;
 import java.util.UUID;
 
 /**
- * Thin synchronous client to Metadata Service, resolved via Eureka. Download
- * Service calls it directly (service-to-service), bypassing the API Gateway.
+ * Thin synchronous client to Metadata Service, addressed via k8s Service DNS
+ * in-cluster (or localhost in local dev) - see metadata-service.url in
+ * application.yaml. Download Service calls it directly (service-to-service),
+ * bypassing the API Gateway.
  */
 @Component
 public class MetadataServiceClient {
 
-    private static final String METADATA_SERVICE_BASE_URL = "lb://metadata-service";
-
     private final RestClient restClient;
 
-    public MetadataServiceClient(@LoadBalanced RestClient.Builder loadBalancedRestClientBuilder) {
-        this.restClient = loadBalancedRestClientBuilder.baseUrl(METADATA_SERVICE_BASE_URL).build();
+    public MetadataServiceClient(
+            RestClient.Builder restClientBuilder,
+            @Value("${metadata-service.url}") String metadataServiceUrl) {
+        this.restClient = restClientBuilder.baseUrl(metadataServiceUrl).build();
     }
 
     /**

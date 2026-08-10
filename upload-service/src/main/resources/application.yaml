@@ -24,14 +24,10 @@ server:
 
 eureka:
   client:
-    serviceUrl:
-      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
-    enabled: true
-    register-with-eureka: true
-    fetch-registry: true
-  instance:
-    prefer-ip-address: true
-    hostname: localhost
+    enabled: false
+
+metadata-service:
+  url: ${METADATA_SERVICE_URL:http://localhost:8082}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

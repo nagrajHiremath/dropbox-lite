@@ -19,8 +19,13 @@ minio:
 
 eureka:
   client:
-    service-url:
-      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    enabled: false
+
+metadata-service:
+  url: ${METADATA_SERVICE_URL:http://localhost:8082}
+
+upload-service:
+  url: ${UPLOAD_SERVICE_URL:http://localhost:8083}
 
 logging:
   pattern:

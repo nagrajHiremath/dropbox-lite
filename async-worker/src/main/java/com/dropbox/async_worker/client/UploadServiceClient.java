@@ -1,16 +1,16 @@
 package com.dropbox.async_worker.client;
 
-import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Thin synchronous client to Upload Service, resolved via Eureka.
+ * Thin synchronous client to Upload Service, addressed via k8s Service DNS
+ * in-cluster (or localhost in local dev) - see upload-service.url in
+ * application.yaml.
  */
 @Component
 public class UploadServiceClient {
-
-    private static final String UPLOAD_SERVICE_BASE_URL = "lb://upload-service";
 
     /**
      * The expired-upload sweep is not scoped to any single end user - it acts on
@@ -24,8 +24,10 @@ public class UploadServiceClient {
 
     private final RestClient restClient;
 
-    public UploadServiceClient(@LoadBalanced RestClient.Builder loadBalancedRestClientBuilder) {
-        this.restClient = loadBalancedRestClientBuilder.baseUrl(UPLOAD_SERVICE_BASE_URL).build();
+    public UploadServiceClient(
+            RestClient.Builder restClientBuilder,
+            @Value("${upload-service.url}") String uploadServiceUrl) {
+        this.restClient = restClientBuilder.baseUrl(uploadServiceUrl).build();
     }
 
     /**

@@ -1,0 +1,69 @@
+# k8s/dropbox/services/async-worker.yaml
+#
+# No Service object - async-worker is a Kafka consumer, nothing calls it over
+# HTTP (it only calls out to metadata-service/upload-service).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: async-worker
+  namespace: dropbox-lite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: async-worker
+  template:
+    metadata:
+      labels:
+        app: async-worker
+    spec:
+      containers:
+        - name: async-worker
+          image: nagrajh/dropbox-async-worker:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8085
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: MINIO_ENDPOINT
+              value: http://minio:9000
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: dropbox-files
+            - name: METADATA_SERVICE_URL
+              value: http://metadata-service:8082
+            - name: UPLOAD_SERVICE_URL
+              value: http://upload-service:8083
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8085
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8085
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5

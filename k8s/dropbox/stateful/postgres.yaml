@@ -1,0 +1,98 @@
+# k8s/dropbox/stateful/postgres.yaml
+#
+# Isolated from Lovable's pgvector StatefulSet entirely - own instance, own
+# PVC, own credentials. Mirrors local dev's docker-compose.yml +
+# infra/postgres/init-databases.sh exactly: one "dropbox" superuser owns all
+# three databases (account_db, metadata_db, upload_db), no per-DB users
+# (unlike Lovable's pgvector-init, which creates distinct users per DB - not
+# needed here since Dropbox's own application.yaml files already default to
+# a single shared user).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: dropbox-lite
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+
+    for db in metadata_db upload_db; do
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        CREATE DATABASE $db;
+    EOSQL
+    done
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: dropbox-lite
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  serviceName: postgres
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_USER
+              value: dropbox
+            - name: POSTGRES_DB
+              value: account_db
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: postgres-init
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: dropbox-lite
+spec:
+  clusterIP: None   # headless - required for StatefulSet DNS
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
