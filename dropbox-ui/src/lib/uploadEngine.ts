@@ -17,7 +17,7 @@ const PART_RETRY_BACKOFF_MS = 1000
 export type UploadTarget =
   { kind: 'new-file'; folderId: string | undefined } | { kind: 'new-version'; fileId: string }
 
-export type EngineStatus = 'uploading' | 'completing' | 'done' | 'failed' | 'aborted'
+export type EngineStatus = 'uploading' | 'completing' | 'done' | 'failed' | 'aborted' | 'paused'
 
 export interface EngineStatusExtra {
   error?: string
@@ -114,6 +114,11 @@ export class UploadEngine {
   private readonly inFlightPartBytes = new Map<number, number>()
   private abortController = new AbortController()
   private aborted = false
+  /** A local-only stop, unlike abort(): no abortUploadSession call, so the
+   * server-side session (and its already-uploaded parts) stays intact and
+   * `retry()` can pick it back up - resume is just retry() with a fresh
+   * AbortController. */
+  private paused = false
 
   constructor(file: File, target: UploadTarget, callbacks: EngineCallbacks) {
     this.file = file
@@ -131,20 +136,24 @@ export class UploadEngine {
       this.callbacks.onStatusChange('uploading', { uploadId: init.uploadId })
 
       await this.runQueue(range(1, this.totalParts))
-      if (this.aborted) return
+      if (this.aborted || this.paused) return
       await this.finish()
     } catch (err) {
-      if (!this.aborted) this.callbacks.onStatusChange('failed', { error: errorMessage(err) })
+      if (!this.aborted && !this.paused) {
+        this.callbacks.onStatusChange('failed', { error: errorMessage(err) })
+      }
     }
   }
 
   /** Resumable: re-fetches the server's own record of which parts already
    * landed rather than trusting client-side bookkeeping, which may be stale
-   * after a page navigation or a race with an in-flight part. */
+   * after a page navigation or a race with an in-flight part. Doubles as
+   * resume() for a paused upload - same "trust the server" logic applies. */
   async retry(): Promise<void> {
     if (!this.uploadId) return this.start()
 
     this.aborted = false
+    this.paused = false
     this.abortController = new AbortController()
 
     try {
@@ -157,15 +166,27 @@ export class UploadEngine {
 
       const remaining = range(1, this.totalParts).filter((p) => !uploaded.has(p))
       await this.runQueue(remaining)
-      if (this.aborted) return
+      if (this.aborted || this.paused) return
       await this.finish()
     } catch (err) {
-      if (!this.aborted) this.callbacks.onStatusChange('failed', { error: errorMessage(err) })
+      if (!this.aborted && !this.paused) {
+        this.callbacks.onStatusChange('failed', { error: errorMessage(err) })
+      }
     }
+  }
+
+  /** Stops in-flight part uploads without touching the server-side session -
+   * only meaningful once an uploadId exists (initiate already completed). */
+  pause(): void {
+    if (this.paused || this.aborted || !this.uploadId) return
+    this.paused = true
+    this.abortController.abort()
+    this.callbacks.onStatusChange('paused')
   }
 
   abort(): void {
     this.aborted = true
+    this.paused = false
     this.abortController.abort()
     this.callbacks.onStatusChange('aborted')
     if (this.uploadId) {
@@ -210,7 +231,7 @@ export class UploadEngine {
 
       const next = () => {
         if (settled) return
-        if (this.aborted) {
+        if (this.aborted || this.paused) {
           settled = true
           resolve()
           return
@@ -230,7 +251,7 @@ export class UploadEngine {
             })
             .catch((err: unknown) => {
               active--
-              if (this.aborted) {
+              if (this.aborted || this.paused) {
                 next() // treat as a clean stop, not a failure
                 return
               }
@@ -264,7 +285,7 @@ export class UploadEngine {
       this.reportProgress()
     } catch (err) {
       this.inFlightPartBytes.delete(partNumber)
-      if (this.aborted) throw err
+      if (this.aborted || this.paused) throw err
       if (attempt < MAX_PART_ATTEMPTS) {
         await delay(attempt * PART_RETRY_BACKOFF_MS)
         return this.uploadPartWithRetry(partNumber, attempt + 1)

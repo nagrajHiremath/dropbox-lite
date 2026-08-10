@@ -72,6 +72,16 @@ export function VersionHistoryDialog({ file, onOpenChange }: VersionHistoryDialo
     const selected = e.target.files?.[0]
     e.target.value = ''
     if (!selected || !file) return
+
+    // Only enforce when both sides have a known mimeType - an empty
+    // selected.type means the browser couldn't detect it (common for some
+    // extensions), and blocking on an unknown value would reject valid
+    // same-type files more often than it'd catch mismatches.
+    if (file.mimeType && selected.type && selected.type !== file.mimeType) {
+      toast.error(`Select a ${file.mimeType} file to match the current version.`)
+      return
+    }
+
     enqueueUpload(selected, { kind: 'new-version', fileId: file.id })
     onOpenChange(false)
   }
@@ -83,6 +93,7 @@ export function VersionHistoryDialog({ file, onOpenChange }: VersionHistoryDialo
           ref={fileInputRef}
           type="file"
           className="hidden"
+          accept={file?.mimeType ?? undefined}
           onChange={handleNewVersionChange}
         />
 

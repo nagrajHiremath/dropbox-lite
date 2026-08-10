@@ -20,6 +20,7 @@ export function UploadTray() {
   const entries = useUploadQueueStore((s) => s.entries)
   const folderPrepMessage = useUploadQueueStore((s) => s.folderPrepMessage)
   const retry = useUploadQueueStore((s) => s.retry)
+  const pause = useUploadQueueStore((s) => s.pause)
   const abort = useUploadQueueStore((s) => s.abort)
   const dismiss = useUploadQueueStore((s) => s.dismiss)
   const [collapsed, setCollapsed] = useState(false)
@@ -92,6 +93,7 @@ export function UploadTray() {
               key={entry.trackingId}
               entry={entry}
               onRetry={() => retry(entry.trackingId)}
+              onPause={() => pause(entry.trackingId)}
               onCancel={() => abort(entry.trackingId)}
               onDismiss={() => dismiss(entry.trackingId)}
             />

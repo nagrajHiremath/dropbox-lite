@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { FolderPlusIcon, UploadIcon } from 'lucide-react'
+import { FolderPlusIcon, SearchIcon, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/common/PageHeader'
 import { FileTable } from '@/components/files/FileTable'
 import { EntryGrid } from '@/components/files/EntryGrid'
@@ -47,6 +48,7 @@ type ActiveDialog =
 export default function MyFilesPage() {
   const { folderId } = useParams<{ folderId?: string }>()
   const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null)
+  const [search, setSearch] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const enqueueUpload = useUploadQueueStore((s) => s.enqueue)
   const setFolderPrepMessage = useUploadQueueStore((s) => s.setFolderPrepMessage)
@@ -68,9 +70,19 @@ export default function MyFilesPage() {
 
   const folders = foldersQuery.data?.content ?? EMPTY_FOLDERS
   const files = filesQuery.data?.content ?? EMPTY_FILES
+
+  const query = search.trim().toLowerCase()
+  const visibleFolders = useMemo(
+    () => (query ? folders.filter((f) => f.name.toLowerCase().includes(query)) : folders),
+    [folders, query],
+  )
+  const visibleFiles = useMemo(
+    () => (query ? files.filter((f) => f.name.toLowerCase().includes(query)) : files),
+    [files, query],
+  )
   const orderedIds = useMemo(
-    () => [...folders.map((f) => f.id), ...files.map((f) => f.id)],
-    [folders, files],
+    () => [...visibleFolders.map((f) => f.id), ...visibleFiles.map((f) => f.id)],
+    [visibleFolders, visibleFiles],
   )
 
   const { selected, select, clear, selectAll } = useSelection(orderedIds)
@@ -78,6 +90,7 @@ export default function MyFilesPage() {
 
   useEffect(() => {
     clear()
+    setSearch('')
   }, [folderId, clear])
 
   const trashFolder = useTrashFolder()
@@ -248,6 +261,20 @@ export default function MyFilesPage() {
               onTrashSelected: trashSelected,
             }}
           >
+            <div className="relative w-48">
+              <SearchIcon
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+                aria-hidden="true"
+              />
+              <Input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search this folder"
+                aria-label="Search files and folders in this folder"
+                className="h-8 pl-8"
+              />
+            </div>
             <ViewModeToggle />
             <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
               <UploadIcon className="size-4" />
@@ -267,8 +294,8 @@ export default function MyFilesPage() {
                 void foldersQuery.refetch()
                 void filesQuery.refetch()
               }}
-              folders={folders}
-              files={files}
+              folders={visibleFolders}
+              files={visibleFiles}
               selected={selected}
               onSelectEntry={select}
               onClearSelection={clear}
@@ -282,16 +309,22 @@ export default function MyFilesPage() {
               onRequestPreview={(entry) => setActiveDialog({ type: 'preview', entry })}
               onRequestTrash={trashEntry}
               emptyState={
-                <EmptyAreaContextMenu
-                  hasItems={false}
-                  onNewFolder={() => setActiveDialog({ type: 'create' })}
-                  onUploadClick={() => fileInputRef.current?.click()}
-                >
-                  <EmptyFolderDropZone
-                    isDragging={isDragging}
+                query ? (
+                  <p className="text-muted-foreground p-6 text-center text-sm">
+                    No files or folders match "{search.trim()}".
+                  </p>
+                ) : (
+                  <EmptyAreaContextMenu
+                    hasItems={false}
+                    onNewFolder={() => setActiveDialog({ type: 'create' })}
                     onUploadClick={() => fileInputRef.current?.click()}
-                  />
-                </EmptyAreaContextMenu>
+                  >
+                    <EmptyFolderDropZone
+                      isDragging={isDragging}
+                      onUploadClick={() => fileInputRef.current?.click()}
+                    />
+                  </EmptyAreaContextMenu>
+                )
               }
             />
           ) : (
@@ -302,8 +335,8 @@ export default function MyFilesPage() {
                 void foldersQuery.refetch()
                 void filesQuery.refetch()
               }}
-              folders={folders}
-              files={files}
+              folders={visibleFolders}
+              files={visibleFiles}
               selected={selected}
               onSelectEntry={select}
               onClearSelection={clear}
@@ -318,16 +351,22 @@ export default function MyFilesPage() {
               onRequestPreview={(entry) => setActiveDialog({ type: 'preview', entry })}
               onRequestTrash={trashEntry}
               emptyState={
-                <EmptyAreaContextMenu
-                  hasItems={false}
-                  onNewFolder={() => setActiveDialog({ type: 'create' })}
-                  onUploadClick={() => fileInputRef.current?.click()}
-                >
-                  <EmptyFolderDropZone
-                    isDragging={isDragging}
+                query ? (
+                  <p className="text-muted-foreground p-6 text-center text-sm">
+                    No files or folders match "{search.trim()}".
+                  </p>
+                ) : (
+                  <EmptyAreaContextMenu
+                    hasItems={false}
+                    onNewFolder={() => setActiveDialog({ type: 'create' })}
                     onUploadClick={() => fileInputRef.current?.click()}
-                  />
-                </EmptyAreaContextMenu>
+                  >
+                    <EmptyFolderDropZone
+                      isDragging={isDragging}
+                      onUploadClick={() => fileInputRef.current?.click()}
+                    />
+                  </EmptyAreaContextMenu>
+                )
               }
             />
           )}

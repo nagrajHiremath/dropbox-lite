@@ -19,6 +19,7 @@ import { listShares, type SharePermission } from '@/api/shares'
 import { ApiError } from '@/api/client'
 import { sharesKey } from '@/hooks/queryKeys'
 import { useCreateShare, useRevokeShare } from '@/hooks/useShareMutations'
+import { copyText } from '@/lib/clipboard'
 import type { FileEntry } from '@/api/files'
 
 interface ShareDialogProps {
@@ -102,10 +103,9 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
   }
 
   function handleCopy(link: string) {
-    navigator.clipboard
-      .writeText(link)
-      .then(() => toast.success('Link copied'))
-      .catch(() => toast.error('Could not copy link'))
+    void copyText(link).then((ok) =>
+      ok ? toast.success('Link copied') : toast.error('Could not copy link'),
+    )
   }
 
   function handleRevoke(shareId: string) {
@@ -201,16 +201,19 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
               <div className="divide-y">
                 {shares.map((share) => {
                   const isRevoked = share.status === 'REVOKED'
+                  const isExpired =
+                    !isRevoked && !!share.expiresAt && new Date(share.expiresAt) < new Date()
                   return (
                     <div key={share.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{permissionLabel(share.permission)}</span>
                           {isRevoked && <Badge variant="destructive">Revoked</Badge>}
+                          {isExpired && <Badge variant="secondary">Expired</Badge>}
                         </div>
                         <p className="text-muted-foreground">
                           {share.expiresAt
-                            ? `Expires ${formatDateTime(share.expiresAt)}`
+                            ? `${isExpired ? 'Expired' : 'Expires'} ${formatDateTime(share.expiresAt)}`
                             : 'No expiry'}
                         </p>
                       </div>
@@ -218,7 +221,7 @@ export function ShareDialog({ file, onOpenChange }: ShareDialogProps) {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        disabled={isRevoked || revokeShareMutation.isPending}
+                        disabled={isRevoked || isExpired || revokeShareMutation.isPending}
                         onClick={() => handleRevoke(share.id)}
                         aria-label="Revoke link"
                       >

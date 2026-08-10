@@ -27,6 +27,7 @@ interface UploadQueueState {
   setFolderPrepMessage: (message: string | null) => void
   enqueue: (file: File, target: UploadTarget) => string
   retry: (trackingId: string) => void
+  pause: (trackingId: string) => void
   abort: (trackingId: string) => void
   dismiss: (trackingId: string) => void
 }
@@ -110,6 +111,10 @@ export const useUploadQueueStore = create<UploadQueueState>()((set) => ({
 
   retry: (trackingId) => {
     void engines.get(trackingId)?.retry()
+  },
+
+  pause: (trackingId) => {
+    engines.get(trackingId)?.pause()
   },
 
   abort: (trackingId) => {
