@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { UploadEngine, type EngineStatus, type UploadTarget } from '@/lib/uploadEngine'
 import { queryClient } from '@/lib/queryClient'
 import { versionsKey } from '@/hooks/queryKeys'
+import { generateId } from '@/lib/id'
 
 export interface UploadEntry {
   trackingId: string
@@ -42,7 +43,7 @@ export const useUploadQueueStore = create<UploadQueueState>()((set) => ({
   setFolderPrepMessage: (message) => set({ folderPrepMessage: message }),
 
   enqueue: (file, target) => {
-    const trackingId = crypto.randomUUID()
+    const trackingId = generateId()
 
     set((state) => ({
       entries: {

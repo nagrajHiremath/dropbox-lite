@@ -20,6 +20,14 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # ingress-nginx defaults to a 1MB request body limit - fine for JSON
+    # CRUD (folder create, auth, etc) but every multipart upload part PUT
+    # (uploadEngine.ts's xhrPutPart) is well over that, so uploads would get
+    # rejected with 413 right at the ingress before ever reaching
+    # api-gateway/upload-service. "0" = unlimited; the app's own
+    # storage.default-quota-bytes (account-service) is the actual size
+    # control, not the ingress layer.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
 spec:
   ingressClassName: "nginx"
   rules:

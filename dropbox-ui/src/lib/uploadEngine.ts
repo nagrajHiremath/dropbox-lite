@@ -7,6 +7,7 @@ import {
   initiateVersionUpload,
   type UploadStatusResponse,
 } from '@/api/uploads'
+import { generateId } from '@/lib/id'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 const MAX_CONCURRENT_PARTS = 3
@@ -107,7 +108,7 @@ export class UploadEngine {
   private uploadId: string | undefined
   private chunkSize = 0
   private totalParts = 0
-  private readonly idempotencyKey = crypto.randomUUID()
+  private readonly idempotencyKey = generateId()
 
   private readonly completedPartBytes = new Map<number, number>()
   private readonly inFlightPartBytes = new Map<number, number>()
