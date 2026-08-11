@@ -25,6 +25,10 @@ public final class FileSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    public static Specification<FileEntity> statusNot(FileStatus status) {
+        return (root, query, cb) -> cb.notEqual(root.get("status"), status);
+    }
+
     public static Specification<FileEntity> mimeTypeStartsWith(String prefix) {
         return (root, query, cb) -> cb.like(root.get("mimeType"), prefix + "%");
     }

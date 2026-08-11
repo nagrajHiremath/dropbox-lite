@@ -15,10 +15,6 @@ spring:
 server:
   port: 8081
 
-eureka:
-  client:
-    enabled: false
-
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}

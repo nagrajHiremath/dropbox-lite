@@ -25,6 +25,10 @@ public final class FolderSpecifications {
         return (root, query, cb) -> cb.equal(root.get("status"), status);
     }
 
+    public static Specification<Folder> statusNot(FolderStatus status) {
+        return (root, query, cb) -> cb.notEqual(root.get("status"), status);
+    }
+
     public static Specification<Folder> hasName(String name) {
         return (root, query, cb) -> cb.equal(root.get("name"), name);
     }

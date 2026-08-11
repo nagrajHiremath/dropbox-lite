@@ -17,10 +17,6 @@ minio:
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket: ${MINIO_BUCKET:dropbox-files}
 
-eureka:
-  client:
-    enabled: false
-
 metadata-service:
   url: ${METADATA_SERVICE_URL:http://localhost:8082}
 

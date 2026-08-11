@@ -101,6 +101,21 @@ export default function TrashPage() {
   const folders = foldersQuery.data?.content ?? []
   const files = filesQuery.data?.content ?? []
 
+  /**
+   * The list endpoints return every trashed item flat, including ones only
+   * trashed as a cascade side effect of an ancestor folder (metadata-service's
+   * trashFolder now cascades status down the whole subtree). Collapsing to
+   * just the top of each trashed subtree here - hide anything whose immediate
+   * parent is itself in this trashed-folders list - matches how Drive/Dropbox
+   * actually display Trash (one row per trashed folder, contents implied) and
+   * needs no backend change: parentId/folderId are already part of the
+   * existing response shape. Works at any nesting depth: a grandchild's
+   * immediate parent is itself hidden by this same rule, transitively.
+   */
+  const trashedFolderIds = new Set(folders.map((f) => f.id))
+  const topLevelFolders = folders.filter((f) => !f.parentId || !trashedFolderIds.has(f.parentId))
+  const topLevelFiles = files.filter((f) => !f.folderId || !trashedFolderIds.has(f.folderId))
+
   function handleRestore(entry: BrowserEntry) {
     if (entry.type === 'folder') {
       restoreFolder.mutate(
@@ -123,17 +138,21 @@ export default function TrashPage() {
 
   /** No bulk "empty trash" endpoint exists server-side - fires the same
    * per-item permanent-delete mutation PermanentDeleteDialog uses, once per
-   * currently-listed row, mirroring MyFilesPage's trashSelected() bulk-action
+   * top-level row, mirroring MyFilesPage's trashSelected() bulk-action
    * precedent: each fire-and-forget mutation surfaces its own error toast on
-   * failure rather than blocking/rolling back the rest of the batch. */
+   * failure rather than blocking/rolling back the rest of the batch. Only
+   * top-level folders need a call here - permanentlyDeleteFolder already
+   * cascades through its whole subtree server-side, so a nested trashed file
+   * or folder would otherwise get a redundant (harmless, but pointless)
+   * second delete call. */
   function handleEmptyTrash() {
-    folders.forEach((folder) =>
+    topLevelFolders.forEach((folder) =>
       deleteFolder.mutate(
         { id: folder.id },
         { onError: (err) => toast.error(`Couldn't delete "${folder.name}": ${errorMessage(err)}`) },
       ),
     )
-    files.forEach((file) =>
+    topLevelFiles.forEach((file) =>
       deleteFile.mutate(
         { id: file.id },
         { onError: (err) => toast.error(`Couldn't delete "${file.name}": ${errorMessage(err)}`) },
@@ -145,8 +164,8 @@ export default function TrashPage() {
 
   const isLoading = foldersQuery.isLoading || filesQuery.isLoading
   const isError = foldersQuery.isError || filesQuery.isError
-  const isEmpty = folders.length === 0 && files.length === 0
-  const itemCount = folders.length + files.length
+  const isEmpty = topLevelFolders.length === 0 && topLevelFiles.length === 0
+  const itemCount = topLevelFolders.length + topLevelFiles.length
 
   return (
     <>
@@ -188,7 +207,7 @@ export default function TrashPage() {
             <span className="w-16 shrink-0 text-right">Size</span>
             <span className="w-[60px] shrink-0" />
           </div>
-          {folders.map((folder) => (
+          {topLevelFolders.map((folder) => (
             <TrashRow
               key={folder.id}
               entry={toBrowserEntry(folder)}
@@ -196,7 +215,7 @@ export default function TrashPage() {
               onRequestDelete={setDeleteTarget}
             />
           ))}
-          {files.map((file) => (
+          {topLevelFiles.map((file) => (
             <TrashRow
               key={file.id}
               entry={toBrowserEntry(file)}
