@@ -10,7 +10,7 @@ import {
 import { generateId } from '@/lib/id'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-const MAX_CONCURRENT_PARTS = 3
+const MAX_CONCURRENT_PARTS = 6
 const MAX_PART_ATTEMPTS = 3
 const PART_RETRY_BACKOFF_MS = 1000
 

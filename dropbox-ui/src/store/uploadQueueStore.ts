@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { UploadEngine, type EngineStatus, type UploadTarget } from '@/lib/uploadEngine'
 import { queryClient } from '@/lib/queryClient'
-import { versionsKey } from '@/hooks/queryKeys'
+import { versionsKey, storageUsageKey } from '@/hooks/queryKeys'
 import { generateId } from '@/lib/id'
 
 export interface UploadEntry {
@@ -105,6 +105,14 @@ export const useUploadQueueStore = create<UploadQueueState>()((set) => ({
           if (target.kind === 'new-version') {
             void queryClient.invalidateQueries({ queryKey: versionsKey(target.fileId) })
           }
+          // Doesn't make the number correct immediately - account-service only
+          // learns about this upload once its Kafka consumer processes the
+          // FILE_CREATED/FILE_VERSION_CREATED event (outbox publisher polls
+          // every ~2s), so the very next fetch can still return the pre-upload
+          // value. StorageUsageSection's own refetchInterval is what catches
+          // it up a few seconds later; this just gets the ball rolling
+          // immediately instead of waiting for the next window-focus refetch.
+          void queryClient.invalidateQueries({ queryKey: storageUsageKey })
         }
       },
     })

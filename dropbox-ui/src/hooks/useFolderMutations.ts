@@ -7,7 +7,7 @@ import {
   restoreFolder,
   trashFolder,
 } from '@/api/folders'
-import { foldersKey } from './queryKeys'
+import { foldersKey, storageUsageKey } from './queryKeys'
 
 // UI-14: broad ['folders'] prefix (not just foldersKey(parentId)) for the
 // trash-related mutations below - the trashed-folders view is a separate
@@ -86,6 +86,11 @@ export function usePermanentlyDeleteFolder() {
     mutationFn: ({ id }: { id: string }) => permanentlyDeleteFolder(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: FOLDERS_PREFIX })
+      // Same async-lag caveat as uploadQueueStore's post-upload invalidation -
+      // see StorageUsageSection for the full explanation. Particularly
+      // relevant here since permanentlyDeleteFolder cascades server-side and
+      // can free a lot more than one file's worth of quota at once.
+      void queryClient.invalidateQueries({ queryKey: storageUsageKey })
     },
   })
 }

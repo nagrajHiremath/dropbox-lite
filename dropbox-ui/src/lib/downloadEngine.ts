@@ -2,7 +2,7 @@ import { useAuthStore } from '@/store/authStore'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 const CHUNK_SIZE = 8 * 1024 * 1024 // 8 MiB, matches uploadEngine's DEFAULT_CHUNK_SIZE
-const MAX_CONCURRENT_CHUNKS = 3
+const MAX_CONCURRENT_CHUNKS = 6
 const MAX_CHUNK_ATTEMPTS = 3
 const CHUNK_RETRY_BACKOFF_MS = 1000
 

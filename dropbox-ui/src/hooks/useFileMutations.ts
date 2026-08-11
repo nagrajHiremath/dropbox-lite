@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { moveFile, permanentlyDeleteFile, renameFile, restoreFile, trashFile } from '@/api/files'
+import { storageUsageKey } from './queryKeys'
 
 // UI-13: broad ['files'] prefix rather than filesKey(folderId) specifically -
 // Recent/Photos/Videos are separate queries (['files','recent'],
@@ -63,6 +64,9 @@ export function usePermanentlyDeleteFile() {
     mutationFn: ({ id }: { id: string }) => permanentlyDeleteFile(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: FILES_PREFIX })
+      // Same async-lag caveat as uploadQueueStore's post-upload invalidation -
+      // see StorageUsageSection for the full explanation.
+      void queryClient.invalidateQueries({ queryKey: storageUsageKey })
     },
   })
 }

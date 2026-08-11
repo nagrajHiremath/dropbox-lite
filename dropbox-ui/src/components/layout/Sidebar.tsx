@@ -84,11 +84,23 @@ export default function Sidebar() {
   )
 }
 
-/** Refetched on window focus (TanStack Query's default) so usage updates
- * after uploads/deletes without needing manual invalidation wired through
- * every mutation that changes it. */
+/**
+ * Upload/delete mutations explicitly invalidate storageUsageKey so this
+ * refetches right away, but the number they'll get back can still be stale
+ * for a few seconds: account-service only learns about the change once its
+ * Kafka consumer processes the corresponding file-lifecycle event (the
+ * publishing side polls its outbox every ~2s), which is inherently async
+ * relative to the mutation resolving on the frontend. The refetchInterval
+ * here is what catches it up automatically after that - not a replacement
+ * for the explicit invalidations (which get it moving immediately), a
+ * safety net for the propagation delay those alone can't close.
+ */
 function StorageUsageSection() {
-  const { data } = useQuery({ queryKey: storageUsageKey, queryFn: getStorageUsage })
+  const { data } = useQuery({
+    queryKey: storageUsageKey,
+    queryFn: getStorageUsage,
+    refetchInterval: 15_000,
+  })
   if (!data) return null
 
   const percent =
