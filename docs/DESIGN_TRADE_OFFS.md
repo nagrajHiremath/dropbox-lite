@@ -20,13 +20,13 @@ This document explains the main architectural decisions in Dropbox Lite, why the
 
 ## Failure Handling
 
-| Pattern | Impl                                                                                                                      | Solution                                                                              |
-|---|---------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
-| Idempotency | Upload initiation requires an `Idempotency-Key`; unique constraint on (user, operation, key)                              | A retried request (e.g. lost response) can't create a duplicate upload session        |
-| Distributed Lock | Redis lock around upload completion (atomic acquire, safe scripted release)                                               | Only one instance completes a given upload, even with concurrent requests or replicas |
-| Outbox | Lifecycle events written to an outbox table in the same DB transaction as the change, then published to Kafka by a poller | Database change and event publish can't fall out of sync                              |
-| Retry + DLT | Kafka consumers retry transient failures with fixed backoff (2s / 10s / 30s) before routing to a dead-letter topic        | One failing message can't block the queue; failures are kept for investigation/replay |
-| Async Processing | Downstream work (e.g. MinIO cleanup after permanent delete) runs via a Kafka consumer, not inline in the request          | User isn't blocked waiting on non-critical follow-up work                             |
+| Pattern | What We Do | Why It Helps |
+|---|---|---|
+| Idempotency | Upload initiation requires an `Idempotency-Key`; unique constraint on (user, operation, key) | A retried request (e.g. lost response) can't create a duplicate upload session |
+| Distributed Lock | Redis lock around upload completion (atomic acquire, safe scripted release) | Only one instance completes a given upload, even with concurrent requests or replicas |
+| Outbox | Lifecycle events written to an outbox table in the same DB transaction as the change, then published to Kafka by a poller | Database change and event publish can't fall out of sync |
+| Retry + DLT | Kafka consumers retry transient failures with fixed backoff (2s / 10s / 30s) before routing to a dead-letter topic | One failing message can't block the queue; failures are kept for investigation/replay |
+| Async Processing | Downstream work (e.g. MinIO cleanup after permanent delete) runs via a Kafka consumer, not inline in the request | User isn't blocked waiting on non-critical follow-up work |
 
 ---
 

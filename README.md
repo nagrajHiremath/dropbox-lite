@@ -1,41 +1,36 @@
-# 🧊 Dropbox Lite
+## 🧊 Dropbox Lite
 
 A production-style, Dropbox-like file storage and sharing platform — Spring Boot microservices on the backend, React on the frontend. Built for a hackathon.
 
-## 🔴 Live
+[![System Context](docs/buisness-flow-svg/L1_SYSTEM_CONTEXT.svg)](docs/ARCHITECTURE.md)
+
+### 🔴 Live
 
 | Service | URL |
 |---|---|
 | UI | http://dropbox.34-14-138-43.nip.io |
 | Swagger / OpenAPI | http://dropbox.34-14-138-43.nip.io/swagger-ui.html (aggregates all services) |
 
-## Overview
+### Overview
 
 Six independently deployable services, each owning its own PostgreSQL database and talking over REST and Kafka. File bytes live in MinIO; Redis backs caching, locks, and rate-limiting.
 
-- Account
-- Metadata
-- Upload
-- Download
-- API Gateway
-- Async Worker
+- [![account-service](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-account-service.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-account-service.yaml)
+- [![api-gateway](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-api-gateway.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-api-gateway.yaml)
+- [![metadata-service](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-metadata-service.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-metadata-service.yaml)
+- [![upload-service](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-upload-service.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-upload-service.yaml)
+- [![download-service](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-download-service.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-download-service.yaml)
+- [![async-worker](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-async-worker.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-async-worker.yaml)
+- [![dropbox-ui](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-ui.yaml/badge.svg)](https://github.com/nagrajHiremath/dropbox-lite/actions/workflows/deploy-dropbox-ui.yaml)
+
 
 **Stack:** Java 21 · Spring Boot · Spring Cloud Gateway · PostgreSQL · Redis · Kafka · MinIO · Docker · Kubernetes (GKE) · React + Vite + TypeScript
 
-## Patterns
+**CI/CD:** per-service [GitHub Actions](.github/workflows/) pipelines (path-filtered — only the changed service rebuilds) deploy to Google Cloud (GKE) on merge to `main`.
 
-| Pattern | Where |
-|---|---|
-| Idempotency | Upload session creation — `Idempotency-Key` header + unique constraint (`upload-service/.../IdempotencyKey.java`) |
-| Outbox | Lifecycle events written in the same DB transaction as the change, published by a poller (`upload-service` & `metadata-service`, `OutboxEvent.java` / `OutboxPublisher.java`) |
-| Retry + DLT | Kafka consumers retry with fixed backoff (2s/10s/30s) before routing to a dead-letter topic — every consumer, across `account-service`, `metadata-service`, and `async-worker` (`.../config/KafkaConsumerConfig.java`) |
-| Caching | Redis cache-aside for file/folder metadata, PostgreSQL as source of truth (`metadata-service/.../RedisCacheService.java`) |
-| Rate limiting | Redis token-bucket per route at the gateway (`api-gateway/application.yaml`, `RequestRateLimiter`) |
-| Distributed locking | Redis lock around upload completion and version creation (`upload-service/.../RedisLockService.java`) |
+Applies idempotency, an outbox pattern, retry/DLT, distributed locking, caching, and rate limiting where relevant to each service — see [Design Trade-offs](docs/DESIGN_TRADE_OFFS.md) for specifics.
 
-## Architecture & Docs
-
-[![System Context](docs/buisness-flow-svg/L1_SYSTEM_CONTEXT.svg)](docs/ARCHITECTURE.md)
+### Architecture & Docs
 
 | Doc | What's in it |
 |---|---|
@@ -44,7 +39,7 @@ Six independently deployable services, each owning its own PostgreSQL database a
 | [Technical Design](docs/claude/TECHNICAL_DESIGN.md) | Full architecture, APIs, DB schema, Kafka/Outbox design |
 | [Postman Collection](docs/postman/Dropbox-Lite.postman_collection.json) | Ready-to-import API requests |
 
-## Run Locally
+### Run Locally
 
 ```bash
 cp .env.example .env
