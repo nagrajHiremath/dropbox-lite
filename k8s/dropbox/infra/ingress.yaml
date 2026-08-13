@@ -41,6 +41,33 @@ spec:
                 name: api-gateway
                 port:
                   number: 8080
+          # Aggregated Swagger UI lives on api-gateway itself at these
+          # springdoc-default paths (not under /api), so without explicit
+          # rules they'd fall through to the "/" catch-all below and hit
+          # dropbox-ui instead. Kubernetes Prefix matching is per path
+          # element, so "/swagger-ui" would NOT also match
+          # "/swagger-ui.html" - both are listed explicitly.
+          - path: /swagger-ui.html
+            pathType: Exact
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
           - path: /
             pathType: Prefix
             backend:

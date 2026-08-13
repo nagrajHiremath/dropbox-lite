@@ -13,9 +13,9 @@ hackathon timeline.
 
 Before making architectural or implementation decisions, use:
 
-- `docs/TECHNICAL_DESIGN.md` — architecture, services, database, APIs,
+- `docs/claude/TECHNICAL_DESIGN.md` — architecture, services, database, APIs,
   Kafka, Outbox, Redis, MinIO, consistency and failure handling.
-- `docs/IMPLEMENTATION_PLAN.md` — implementation phases, priorities,
+- `docs/claude/IMPLEMENTATION_PLAN.md` — implementation phases, priorities,
   dependencies and scope.
 
 Do not change documented architecture or service boundaries without explicit

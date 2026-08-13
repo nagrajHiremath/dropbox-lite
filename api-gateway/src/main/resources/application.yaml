@@ -111,6 +111,61 @@ spring:
                 - name: RequestRateLimiter
                   args: *uploadRateLimit
 
+            # Aggregated Swagger UI: each route rewrites /v3/api-docs/{service}
+            # to that service's own /v3/api-docs, so the gateway's own
+            # swagger-ui.html can fetch all four specs same-origin. Path
+            # already starts with /v3/api-docs, which JwtAuthenticationWebFilter
+            # already treats as public - no security-config changes needed.
+            - id: account-service-docs
+              uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/v3/api-docs/account-service
+              filters:
+                - name: RewritePath
+                  args:
+                    regexp: /v3/api-docs/account-service
+                    replacement: /v3/api-docs
+            - id: metadata-service-docs
+              uri: ${METADATA_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/v3/api-docs/metadata-service
+              filters:
+                - name: RewritePath
+                  args:
+                    regexp: /v3/api-docs/metadata-service
+                    replacement: /v3/api-docs
+            - id: upload-service-docs
+              uri: ${UPLOAD_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/v3/api-docs/upload-service
+              filters:
+                - name: RewritePath
+                  args:
+                    regexp: /v3/api-docs/upload-service
+                    replacement: /v3/api-docs
+            - id: download-service-docs
+              uri: ${DOWNLOAD_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/v3/api-docs/download-service
+              filters:
+                - name: RewritePath
+                  args:
+                    regexp: /v3/api-docs/download-service
+                    replacement: /v3/api-docs
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: account-service
+        url: /v3/api-docs/account-service
+      - name: metadata-service
+        url: /v3/api-docs/metadata-service
+      - name: upload-service
+        url: /v3/api-docs/upload-service
+      - name: download-service
+        url: /v3/api-docs/download-service
+
 server:
   port: 8080
 

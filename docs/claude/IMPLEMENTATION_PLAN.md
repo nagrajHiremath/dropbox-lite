@@ -1419,9 +1419,9 @@ Redis lock unavailable
 
 MinIO part failure
 
-interrupted upload
+interrupted upload✅
 
-interrupted download
+interrupted download✅
 
 concurrent version creation
 
