@@ -2,7 +2,6 @@ package com.dropbox.api_gateway.ratelimit;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -18,11 +17,15 @@ import java.util.List;
  * two windows. State (tokens remaining, last refill timestamp) lives in a Redis hash; refill +
  * consume is done atomically in a single Lua script so two concurrent requests for the same key
  * can't both read the same "tokens available" snapshot and both be allowed through.
+ *
+ * Bean name ("bucket") doubles as the app.rate-limit.method / per-route
+ * algorithm value CustomRateLimiterGatewayFilterFactory looks routes up by -
+ * all four RateLimiter beans coexist now (RDS-03 per-route algorithm
+ * selection), not gated by @ConditionalOnProperty to a single active one.
  */
 @Slf4j
-@Component
+@Component("bucket")
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.rate-limit.method", havingValue = "bucket")
 public class TokenBucketRateLimiter implements RateLimiter {
 
     private static final RedisScript<List> SCRIPT = new DefaultRedisScript<>("""

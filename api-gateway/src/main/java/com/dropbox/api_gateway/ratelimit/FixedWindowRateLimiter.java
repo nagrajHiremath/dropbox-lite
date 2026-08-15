@@ -1,16 +1,15 @@
 package com.dropbox.api_gateway.ratelimit;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-@Component
+/** Bean name ("fixed") doubles as the app.rate-limit.method / per-route algorithm value - see TokenBucketRateLimiter. */
+@Component("fixed")
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.rate-limit.method", havingValue = "fixed")
 public class FixedWindowRateLimiter implements RateLimiter {
 
     private final StringRedisTemplate redis;

@@ -43,7 +43,11 @@ spring:
             # Route predicates/uri/ordering are otherwise untouched. max-requests
             # carries over the old redis-rate-limiter.burstCapacity numbers as the
             # per-window cap (window-seconds: 1) - see app.rate-limit.method below
-            # for which CustomRateLimiterGatewayFilterFactory backs this.
+            # for the default CustomRateLimiterGatewayFilterFactory backs this
+            # with. Any route can override the algorithm per-route by adding
+            # `algorithm: bucket|fixed|sliding|sliding-lua` to its args - omitted
+            # here everywhere on purpose, so every route still uses that same
+            # global default unless/until one is deliberately overridden.
             - id: account-service
               uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
               predicates:
@@ -170,10 +174,11 @@ server:
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}
 
-# RDS-03: selects which com.dropbox.api_gateway.ratelimit.RateLimiter bean
-# is active (each is @ConditionalOnProperty on this same key) - bucket,
-# fixed, sliding, or sliding-lua. sliding-lua is the atomic, boundary-safe
-# choice (single Lua script, no fixed-window edge burst).
+# RDS-03: default com.dropbox.api_gateway.ratelimit.RateLimiter bean used by
+# any route that doesn't set its own `algorithm` filter arg - bucket, fixed,
+# sliding, or sliding-lua. All four beans are always registered; this only
+# picks the fallback. sliding-lua is the atomic, boundary-safe choice (single
+# Lua script, no fixed-window edge burst).
 app:
   rate-limit:
     method: ${RATE_LIMIT_METHOD:sliding-lua}

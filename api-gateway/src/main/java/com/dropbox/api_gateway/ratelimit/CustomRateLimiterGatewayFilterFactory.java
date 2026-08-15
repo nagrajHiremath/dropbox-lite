@@ -2,6 +2,7 @@ package com.dropbox.api_gateway.ratelimit;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
@@ -10,11 +11,18 @@ import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.util.Map;
 
 /**
  * RDS-03: replaces Spring Cloud Gateway's built-in RequestRateLimiter /
- * RedisRateLimiter with one of our own RateLimiter implementations (the
- * active one selected via app.rate-limit.method). Route yaml shape is
+ * RedisRateLimiter with one of our own RateLimiter implementations. All four
+ * RateLimiter beans (bean name == algorithm name: bucket/fixed/sliding/
+ * sliding-lua) coexist in the context; each route picks one via an optional
+ * `algorithm` arg, falling back to app.rate-limit.method when a route
+ * doesn't set one - so existing routes with no `algorithm` arg keep behaving
+ * exactly as before this per-route selection was added. Route yaml shape is
  * unchanged in spirit - a per-route filter with args - just renamed
  * max-requests/window-seconds/key-resolver instead of
  * redis-rate-limiter.replenishRate/burstCapacity/key-resolver.
@@ -32,15 +40,26 @@ import org.springframework.stereotype.Component;
 public class CustomRateLimiterGatewayFilterFactory
         extends AbstractGatewayFilterFactory<CustomRateLimiterGatewayFilterFactory.Config> {
 
-    private final RateLimiter rateLimiter;
+    private final Map<String, RateLimiter> rateLimiters;
+    private final String defaultAlgorithm;
 
-    public CustomRateLimiterGatewayFilterFactory(RateLimiter rateLimiter) {
+    public CustomRateLimiterGatewayFilterFactory(
+            Map<String, RateLimiter> rateLimiters,
+            @Value("${app.rate-limit.method}") String defaultAlgorithm) {
         super(Config.class);
-        this.rateLimiter = rateLimiter;
+        this.rateLimiters = rateLimiters;
+        this.defaultAlgorithm = defaultAlgorithm;
     }
 
     @Override
     public GatewayFilter apply(Config config) {
+        String algorithm = StringUtils.hasText(config.getAlgorithm()) ? config.getAlgorithm() : defaultAlgorithm;
+        RateLimiter rateLimiter = rateLimiters.get(algorithm);
+        if (rateLimiter == null) {
+            throw new IllegalStateException(
+                    "Unknown rate-limit algorithm '" + algorithm + "' - available: " + rateLimiters.keySet());
+        }
+
         return (exchange, chain) -> config.getKeyResolver().resolve(exchange)
                 .flatMap(key -> {
                     Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
@@ -66,5 +85,6 @@ public class CustomRateLimiterGatewayFilterFactory
         private int maxRequests;
         private long windowSeconds;
         private KeyResolver keyResolver;
+        private String algorithm;
     }
 }

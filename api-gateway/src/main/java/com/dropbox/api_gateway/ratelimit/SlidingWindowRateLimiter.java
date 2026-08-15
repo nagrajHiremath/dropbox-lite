@@ -1,7 +1,6 @@
 package com.dropbox.api_gateway.ratelimit;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Component;
@@ -10,9 +9,9 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 
-@Component
+/** Bean name ("sliding") doubles as the app.rate-limit.method / per-route algorithm value - see TokenBucketRateLimiter. */
+@Component("sliding")
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "app.rate-limit.method", havingValue = "sliding")
 public class SlidingWindowRateLimiter implements RateLimiter{
 
     private final StringRedisTemplate redis;
