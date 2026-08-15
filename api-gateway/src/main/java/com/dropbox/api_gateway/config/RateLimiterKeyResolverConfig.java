@@ -9,9 +9,11 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * RDS-03: KeyResolver beans for the RequestRateLimiter gateway filter (see
+ * RDS-03: KeyResolver beans for the CustomRateLimiter gateway filter (see
  * TECHNICAL_DESIGN.md 44). Referenced from application.yaml route filter args
- * via SpEL, e.g. key-resolver: "#{@userKeyResolver}".
+ * via SpEL, e.g. key-resolver: "#{@userKeyResolver}". Not tied to any
+ * particular rate-limiting backend - reused as-is by
+ * CustomRateLimiterGatewayFilterFactory.
  */
 @Configuration
 public class RateLimiterKeyResolverConfig {

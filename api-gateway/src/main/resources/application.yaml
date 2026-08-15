@@ -37,78 +37,76 @@ spring:
                 allowCredentials: false
                 maxAge: 3600
           routes:
-            # RDS-03: RequestRateLimiter args grouped by TECHNICAL_DESIGN.md 44's
+            # RDS-03: CustomRateLimiter args grouped by TECHNICAL_DESIGN.md 44's
             # priority tiers. YAML anchors (&name / *name) avoid duplicating args
             # across the two routes each in the upload and public-share tiers.
-            # Route predicates/uri/ordering are otherwise untouched.
+            # Route predicates/uri/ordering are otherwise untouched. max-requests
+            # carries over the old redis-rate-limiter.burstCapacity numbers as the
+            # per-window cap (window-seconds: 1) - see app.rate-limit.method below
+            # for which CustomRateLimiterGatewayFilterFactory backs this.
             - id: account-service
               uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
               predicates:
                 - Path=/api/v1/auth/**,/api/v1/users/**
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args: &authRateLimit
-                    redis-rate-limiter.replenishRate: ${RATE_LIMIT_AUTH_REPLENISH:3}
-                    redis-rate-limiter.burstCapacity: ${RATE_LIMIT_AUTH_BURST:5}
-                    redis-rate-limiter.requestedTokens: 1
+                    max-requests: ${RATE_LIMIT_AUTH_MAX:5}
+                    window-seconds: ${RATE_LIMIT_AUTH_WINDOW:1}
                     key-resolver: "#{@ipKeyResolver}"
             - id: upload-new-version
               uri: ${UPLOAD_SERVICE_URL:http://localhost:8083}
               predicates:
                 - Path=/api/v1/files/*/uploads
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args: &uploadRateLimit
-                    redis-rate-limiter.replenishRate: ${RATE_LIMIT_UPLOAD_REPLENISH:5}
-                    redis-rate-limiter.burstCapacity: ${RATE_LIMIT_UPLOAD_BURST:10}
-                    redis-rate-limiter.requestedTokens: 1
+                    max-requests: ${RATE_LIMIT_UPLOAD_MAX:10}
+                    window-seconds: ${RATE_LIMIT_UPLOAD_WINDOW:1}
                     key-resolver: "#{@userKeyResolver}"
             - id: download-file-content
               uri: ${DOWNLOAD_SERVICE_URL:http://localhost:8084}
               predicates:
                 - Path=/api/v1/files/*/content,/api/v1/files/*/versions/*/content
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args:
-                    redis-rate-limiter.replenishRate: ${RATE_LIMIT_DOWNLOAD_REPLENISH:10}
-                    redis-rate-limiter.burstCapacity: ${RATE_LIMIT_DOWNLOAD_BURST:20}
-                    redis-rate-limiter.requestedTokens: 1
+                    max-requests: ${RATE_LIMIT_DOWNLOAD_MAX:20}
+                    window-seconds: ${RATE_LIMIT_DOWNLOAD_WINDOW:1}
                     key-resolver: "#{@userKeyResolver}"
             - id: metadata-service
               uri: ${METADATA_SERVICE_URL:http://localhost:8082}
               predicates:
                 - Path=/api/v1/files/**,/api/v1/folders/**,/api/v1/shares/**
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args:
-                    redis-rate-limiter.replenishRate: ${RATE_LIMIT_METADATA_REPLENISH:20}
-                    redis-rate-limiter.burstCapacity: ${RATE_LIMIT_METADATA_BURST:40}
-                    redis-rate-limiter.requestedTokens: 1
+                    max-requests: ${RATE_LIMIT_METADATA_MAX:40}
+                    window-seconds: ${RATE_LIMIT_METADATA_WINDOW:1}
                     key-resolver: "#{@userKeyResolver}"
             - id: public-share-content
               uri: ${DOWNLOAD_SERVICE_URL:http://localhost:8084}
               predicates:
                 - Path=/api/v1/public/shares/*/content
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args: &publicShareRateLimit
-                    redis-rate-limiter.replenishRate: ${RATE_LIMIT_PUBLIC_SHARE_REPLENISH:3}
-                    redis-rate-limiter.burstCapacity: ${RATE_LIMIT_PUBLIC_SHARE_BURST:5}
-                    redis-rate-limiter.requestedTokens: 1
+                    max-requests: ${RATE_LIMIT_PUBLIC_SHARE_MAX:5}
+                    window-seconds: ${RATE_LIMIT_PUBLIC_SHARE_WINDOW:1}
                     key-resolver: "#{@ipKeyResolver}"
             - id: public-share-metadata
               uri: ${METADATA_SERVICE_URL:http://localhost:8082}
               predicates:
                 - Path=/api/v1/public/shares/**
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args: *publicShareRateLimit
             - id: upload-service
               uri: ${UPLOAD_SERVICE_URL:http://localhost:8083}
               predicates:
                 - Path=/api/v1/uploads/**
               filters:
-                - name: RequestRateLimiter
+                - name: CustomRateLimiter
                   args: *uploadRateLimit
 
             # Aggregated Swagger UI: each route rewrites /v3/api-docs/{service}
@@ -171,6 +169,14 @@ server:
 
 jwt:
   secret: ${JWT_SECRET:change-me-local-dev-secret}
+
+# RDS-03: selects which com.dropbox.api_gateway.ratelimit.RateLimiter bean
+# is active (each is @ConditionalOnProperty on this same key) - bucket,
+# fixed, sliding, or sliding-lua. sliding-lua is the atomic, boundary-safe
+# choice (single Lua script, no fixed-window edge burst).
+app:
+  rate-limit:
+    method: ${RATE_LIMIT_METHOD:sliding-lua}
 
 # OBS-01: minimal actuator surface for k8s probes - no detail leakage (default
 # show-details: never), no new dependency (actuator already on the classpath).
