@@ -5,6 +5,8 @@ import lombok.Setter;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -20,6 +22,11 @@ import org.springframework.stereotype.Component;
  * Sets Retry-After directly from RateLimitResult on a 429, since (unlike
  * RedisRateLimiter) that value is already exact - no need for
  * RetryAfterHeaderFilter's constant-second fallback anymore.
+ *
+ * Redis key is scoped by route id + resolved key here, not just the resolved
+ * key alone - RateLimiter implementations only ever see this already-scoped
+ * string, so upload/download/metadata routes (all on userKeyResolver) each
+ * get their own counter instead of silently sharing one per user.
  */
 @Component
 public class CustomRateLimiterGatewayFilterFactory
@@ -36,7 +43,10 @@ public class CustomRateLimiterGatewayFilterFactory
     public GatewayFilter apply(Config config) {
         return (exchange, chain) -> config.getKeyResolver().resolve(exchange)
                 .flatMap(key -> {
-                    RateLimitResult result = rateLimiter.check(key, config.getMaxRequests(), config.getWindowSeconds());
+                    Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+                    String scopedKey = (route != null ? route.getId() : "unknown-route") + ":" + key;
+
+                    RateLimitResult result = rateLimiter.check(scopedKey, config.getMaxRequests(), config.getWindowSeconds());
 
                     exchange.getResponse().getHeaders().add("X-RateLimit-Remaining", String.valueOf(result.remaining()));
 
