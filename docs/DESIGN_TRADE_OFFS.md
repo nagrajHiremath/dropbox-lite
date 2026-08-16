@@ -1,9 +1,5 @@
 # Design Trade-offs
 
-This document explains the main architectural decisions in Dropbox Lite, why they are appropriate for the current system, their practical trade-offs, and how the design could evolve as scale and requirements increase.
-
----
-
 ## Scaling
 
 | Area | Current Design | Scaling Consideration | Possible Evolution |
@@ -20,13 +16,13 @@ This document explains the main architectural decisions in Dropbox Lite, why the
 
 ## Failure Handling
 
-| Pattern | What We Do | Why It Helps |
-|---|---|---|
-| Idempotency | Upload initiation requires an `Idempotency-Key`; unique constraint on (user, operation, key) | A retried request (e.g. lost response) can't create a duplicate upload session |
-| Distributed Lock | Redis lock around upload completion (atomic acquire, safe scripted release) | Only one instance completes a given upload, even with concurrent requests or replicas |
-| Outbox | Lifecycle events written to an outbox table in the same DB transaction as the change, then published to Kafka by a poller | Database change and event publish can't fall out of sync |
-| Retry + DLT | Kafka consumers retry transient failures with fixed backoff (2s / 10s / 30s) before routing to a dead-letter topic | One failing message can't block the queue; failures are kept for investigation/replay |
-| Async Processing | Downstream work (e.g. MinIO cleanup after permanent delete) runs via a Kafka consumer, not inline in the request | User isn't blocked waiting on non-critical follow-up work |
+| Pattern | Current Approach |
+|---|---|
+| Idempotency | Upload Flow — optional `Idempotency-Key` on initiate; unique constraint on (user, operation, key) |
+| Distributed Lock | Upload Flow (completion) and File Versioning (materialization) — atomic acquire, safe scripted release |
+| Outbox | File Lifecycle, File Sharing, Upload Flow — DB write and outbox insert in one transaction, published by a poller (capped at 5 attempts, then marked `FAILED`) |
+| Retry + DLT | File Lifecycle (MinIO cleanup) and File Versioning (materialization safety-net) consumers — fixed backoff 2s / 10s / 30s, then dead-letter topic |
+| Async Processing | File Lifecycle — MinIO cleanup after permanent delete runs via a Kafka consumer, not inline in the request |
 
 ---
 
@@ -34,17 +30,7 @@ This document explains the main architectural decisions in Dropbox Lite, why the
 
 | Area | Current Approach | Trade-off |
 |---|---|---|
-| Cache-Aside | Redis caches file/folder metadata; PostgreSQL is source of truth; cache miss reads DB and repopulates | Brief staleness possible on a missed eviction — acceptable for listings |
-| Eventual Consistency | Some effects (metadata materialization, storage usage) happen asynchronously via Kafka | Short delay between action and downstream effect, traded for decoupling and reliability |
+| Cache-Aside | Redis caches specific reads (file lookup, folder listing, public share resolution); PostgreSQL is source of truth; cache miss reads DB and repopulates | Some write paths don't evict by design (e.g. version restore) — acceptable for how those are used today |
+| Eventual Consistency | Metadata materialization happens synchronously, with an async Kafka consumer as a safety net; storage usage is Kafka-only, no synchronous path | Short delay only if the synchronous materialize call fails; storage usage always lags slightly |
 | Storage Quota | Checked synchronously before upload starts; usage updated asynchronously from lifecycle events | Fast and decoupled, but concurrent uploads have a small race window before usage is recorded |
 | Database Ownership | Each service owns its data; no cross-service database queries | Clear boundaries and independent evolution, at the cost of no cross-service joins |
-
----
-
-## Overall Assessment
-
-The current architecture is already horizontally scalable at the application-service layer and uses several production-oriented patterns: idempotency, distributed locking, transactional outbox, Kafka-based asynchronous processing, caching, distributed rate limiting, and retry/DLT handling.
-
-The main scale boundaries are stateful infrastructure and high-bandwidth file transfer. These do not require rewriting the core service architecture. At larger scale, the main evolution would be scaling PostgreSQL/Redis/Kafka/MinIO and moving large file transfers directly between clients and object storage using presigned URLs.
-
-The current design intentionally favors a working, reliable vertical slice while leaving clear evolution paths for higher scale.

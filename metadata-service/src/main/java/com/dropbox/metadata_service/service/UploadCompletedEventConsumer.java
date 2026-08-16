@@ -37,9 +37,10 @@ import org.springframework.stereotype.Component;
  * the two steps just makes materialize() replay (idempotent) on redelivery,
  * then the second step succeeds.
  *
- * Relies on Spring Kafka's default consumer error handling (bounded retry,
- * then log-and-skip) - custom backoff/DLT routing is EVT-03, not implemented
- * here.
+ * Uses the default kafkaListenerContainerFactory bean (see KafkaConsumerConfig,
+ * EVT-03) by not overriding containerFactory - inherits the same 2s/10s/30s
+ * retry + DLT-to-storage.lifecycle.v1.DLT behavior for free, same as
+ * ActivityConsumer.
  */
 @Slf4j
 @Component

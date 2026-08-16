@@ -32,6 +32,7 @@ A production-style, Dropbox-like file storage and sharing platform — Spring Bo
 |-------------------------------------------------------------------------|---|
 | [Architecture & Buisness Flow](docs/ARCHITECTURE.md)                    | System context → containers → business flows → per-service ERDs (SVGs) |
 | [Design Trade-offs](docs/DESIGN_TRADE_OFFS.md)                          | Scaling, failure handling, and consistency trade-offs |
+| [Rate Limiting](docs/RATE_LIMITING.md)                                  | Current algorithm and per-endpoint limits |
 | [Postman Collection](docs/postman/Dropbox-Lite.postman_collection.json) | Ready-to-import API requests |
 
 ## Run Locally
